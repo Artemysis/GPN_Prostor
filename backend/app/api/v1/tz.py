@@ -31,7 +31,12 @@ from app.schemas.tz import (
 )
 from app.services.jobs import create_job, run_job
 from app.services.tz_analyzer import analyze_tz, compute_overall_completeness
-from app.services.tz_builder import create_tz_from_template, fill_block_with_ai, find_block_schema
+from app.services.tz_builder import (
+    create_tz_from_template,
+    fill_block_with_ai,
+    fill_stages_with_ai,
+    find_block_schema,
+)
 from app.utils.errors import ConflictError, NotFoundError
 
 router = APIRouter()
@@ -156,12 +161,23 @@ async def _fill_ai_task(request_id: uuid.UUID, block_code: str, hint: str | None
     async def task(db: AsyncSession) -> dict:
         tz = await _get_tz(db, request_id)
         request = await _get_request(db, request_id)
-        template = await db.get(TzTemplate, tz.template_id)
-        block = await _get_block(db, tz.id, block_code)
+        stmt = select(TzTemplate).where(TzTemplate.id == tz.template_id).options(selectinload(TzTemplate.stages))
+        template = (await db.execute(stmt)).scalar_one()
         schema = find_block_schema(template, block_code)
         if schema is None:
             raise ValueError(f"Блок {block_code} не найден в схеме шаблона")
 
+        if schema.get("is_stages_block"):
+            stages = await fill_stages_with_ai(
+                template=template,
+                template_stages=template.stages,
+                request_context={"title": request.title, "description": request.description},
+                existing_stage_names=[s.stage_name for s in tz.stages],
+                hint=hint,
+            )
+            return {"block_code": block_code, "stages": stages}
+
+        block = await _get_block(db, tz.id, block_code)
         content = await fill_block_with_ai(
             template=template,
             block_code=block_code,

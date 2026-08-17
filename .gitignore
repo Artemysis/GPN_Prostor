@@ -25,3 +25,7 @@ venv/
 # Локальные настройки и временные файлы
 .cache/
 .ipynb_checkpoints/
+
+# Шаблоны
+*.xlsx
+*.docx
