@@ -147,3 +147,64 @@ def find_block_schema(template: TzTemplate, block_code: str) -> dict | None:
         if block["code"] == block_code:
             return block
     return None
+
+
+STAGES_FILL_SYSTEM_PROMPT = (
+    "Ты — ИИ-консультант платформы ПРОСТОР. Предложи недостающие этапы содержания работ "
+    "для ТЗ типа «{template_name}» как черновик — пользователь их проверит и добавит вручную. "
+    "Не повторяй уже добавленные этапы. Верни строго JSON {{\"stages\": [...]}}."
+)
+
+
+async def fill_stages_with_ai(
+    template: TzTemplate,
+    template_stages: list[TzTemplateStage],
+    request_context: dict[str, Any],
+    existing_stage_names: list[str],
+    hint: str | None = None,
+    llm: DeepSeekLLMClient | None = None,
+) -> list[dict[str, Any]]:
+    llm = llm or get_llm_client()
+    system_prompt = STAGES_FILL_SYSTEM_PROMPT.format(template_name=template.name)
+    user_prompt = (
+        f"Контекст заявки: {request_context}\n"
+        f"Уже добавленные этапы: {existing_stage_names}\n"
+        + (f"Пожелание пользователя: {hint}\n" if hint else "")
+        + "Верни JSON {\"stages\": [{\"stage_name\": ..., \"requirements\": ..., \"expected_results\": ...}]}."
+    )
+    json_schema = {
+        "name": "tz_stages",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "stages": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "stage_name": {"type": "string"},
+                            "requirements": {"type": "string"},
+                            "expected_results": {"type": "string"},
+                        },
+                        "required": ["stage_name", "requirements", "expected_results"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["stages"],
+            "additionalProperties": False,
+        },
+    }
+    result = await llm.chat_json(system_prompt, user_prompt, json_schema)
+    stages = result.get("stages") if result else None
+    if not stages:
+        stages = [
+            {
+                "stage_name": s.stage_name,
+                "requirements": s.default_requirements or "",
+                "expected_results": s.default_results or "",
+            }
+            for s in template_stages
+            if s.stage_name not in existing_stage_names
+        ]
+    return stages
