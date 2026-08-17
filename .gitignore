@@ -1,0 +1,27 @@
+# Байт-код и оптимизированные файлы Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Файлы дистрибутивов и артефакты упаковки
+dist/
+*.egg-info/
+
+# Каталоги сборки
+build/
+wheels/
+
+# Виртуальные окружения
+venv/
+.env
+.venv/
+
+# Файлы покрытия и кэши
+.coverage
+*.cover
+*.py,cover
+
+# Локальные настройки и временные файлы
+.cache/
+.ipynb_checkpoints/
