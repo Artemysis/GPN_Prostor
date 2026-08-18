@@ -151,7 +151,8 @@ async def run_chat_turn(
             }
         )
 
-    header_draft = await _draft_header_fields(llm, user_content, products, contractors, template_rec)
+    # header_draft уже вычислен выше (в gather при llm.enabled или в fallback-ветке) —
+    # повторный вызов лишь дублировал LLM-запрос на каждый ход чата.
     for field, value, confidence, why in header_draft:
         if request_context and request_context.get(field):
             continue  # не перезаписываем то, что пользователь уже заполнил

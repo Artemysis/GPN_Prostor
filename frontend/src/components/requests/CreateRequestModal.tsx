@@ -62,7 +62,10 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
   const selectedTemplateId = chosenTemplateId ?? existingTz?.template_id ?? null
 
   const invalidate = () => {
-    if (requestId) queryClient.invalidateQueries({ queryKey: ['request', requestId] })
+    if (requestId) {
+      queryClient.invalidateQueries({ queryKey: ['request', requestId] })
+      queryClient.invalidateQueries({ queryKey: ['tz', requestId] })
+    }
     queryClient.invalidateQueries({ queryKey: ['requests'] })
   }
 
