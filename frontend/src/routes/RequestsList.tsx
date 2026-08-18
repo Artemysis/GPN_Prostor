@@ -45,7 +45,7 @@ export default function RequestsList() {
   const filtered = status ? requests.filter((r) => r.status === status) : requests
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 xl:py-8">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 xl:py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Заявки</h1>
@@ -84,14 +84,14 @@ export default function RequestsList() {
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-brand-50/50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-3 font-semibold">Номер</th>
-                <th className="px-4 py-3 font-semibold">Название</th>
-                <th className="hidden px-4 py-3 font-semibold md:table-cell">Исполнитель / продукт</th>
-                <th className="hidden px-4 py-3 font-semibold lg:table-cell">Стоимость</th>
-                <th className="hidden px-4 py-3 font-semibold lg:table-cell">Сроки</th>
-                <th className="hidden px-4 py-3 font-semibold lg:table-cell">Готовность ТЗ</th>
-                <th className="px-4 py-3 font-semibold">Статус</th>
-                <th className="px-2 py-3" />
+                <th className="px-3 py-2.5 font-semibold">Номер</th>
+                <th className="w-full px-3 py-2.5 font-semibold">Название</th>
+                <th className="hidden px-3 py-2.5 font-semibold md:table-cell">Исполнитель / продукт</th>
+                <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Стоимость</th>
+                <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Сроки</th>
+                <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Готовность ТЗ</th>
+                <th className="px-3 py-2.5 font-semibold">Статус</th>
+                <th className="px-2 py-2.5" />
               </tr>
             </thead>
             <tbody>
@@ -114,30 +114,30 @@ export default function RequestsList() {
                     className="cursor-pointer border-b border-slate-50 transition-colors last:border-0 hover:bg-brand-50/40"
                     onClick={() => navigate(`/requests/${r.id}`)}
                   >
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand-800">{r.number}</td>
-                    <td className="max-w-[180px] px-4 py-3 sm:max-w-[280px]">
+                    <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-brand-800">{r.number}</td>
+                    <td className="px-3 py-3">
                       <p className="truncate font-medium text-slate-800">{r.title}</p>
                       <p className="text-xs text-slate-400">создана {formatDate(r.created_at)}</p>
                       <p className="mt-0.5 truncate text-xs text-slate-500 md:hidden">
                         {companies.find((c) => c.company_id === r.company_id)?.name ?? '—'}
                       </p>
                     </td>
-                    <td className="hidden px-4 py-3 text-xs text-slate-600 md:table-cell">
+                    <td className="hidden max-w-[200px] px-3 py-3 text-xs text-slate-600 md:table-cell">
                       <p className="truncate">{companies.find((c) => c.company_id === r.company_id)?.name ?? '—'}</p>
                       <p className="truncate text-slate-400">
                         {products.find((p) => p.product_id === r.product_id)?.product_name ?? 'продукт не выбран'}
                       </p>
                     </td>
-                    <td className="hidden whitespace-nowrap px-4 py-3 text-slate-700 lg:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-3 text-slate-700 lg:table-cell">
                       {formatMoney(r.cost_total, r.currency)}
                     </td>
-                    <td className="hidden whitespace-nowrap px-4 py-3 text-xs text-slate-600 lg:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-3 text-xs text-slate-600 lg:table-cell">
                       {formatDate(r.date_start)} — {formatDate(r.date_end)}
                     </td>
-                    <td className="hidden px-4 py-3 lg:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-3 lg:table-cell">
                       <TzCompletenessCell requestId={r.id} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                    <td className="whitespace-nowrap px-3 py-3">
                       <StatusBadge status={r.status} />
                     </td>
                     <td className="px-2 py-3 text-right">
@@ -177,7 +177,7 @@ function TzCompletenessCell({ requestId }: { requestId: string }) {
   if (!tz) return <span className="text-xs text-slate-400">нет ТЗ</span>
   return (
     <div className="flex items-center gap-2">
-      <Progress value={tz.completeness_pct} className="w-20" />
+      <Progress value={tz.completeness_pct} className="w-10" />
       <span className="text-xs font-medium text-slate-600">{tz.completeness_pct}%</span>
     </div>
   )
