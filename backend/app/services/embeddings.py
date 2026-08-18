@@ -23,6 +23,47 @@ class EmbeddingsClient(Protocol):
     def dim(self) -> int: ...
 
 
+class OpenRouterEmbeddingsClient:
+    """Эмбеддинги через OpenAI-совместимый API (OpenRouter и т.п.).
+
+    Используется, когда EMBEDDINGS_PROVIDER указывает на внешний API
+    (`openai` / `openrouter`) — векторизация выполняется удалённой моделью
+    через POST {embeddings_api_base}/embeddings, а не локально.
+    """
+
+    def __init__(self, base_url: str, api_key: str, model: str, dim: int):
+        from openai import AsyncOpenAI
+
+        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self.model = model
+        self._dim = dim
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        try:
+            # dimensions — Matryoshka-обрезка вектора под размер колонки в pgvector
+            # (например, qwen3-embedding-8b по умолчанию отдаёт 4096, а не 1536).
+            response = await self._client.embeddings.create(
+                model=self.model, input=texts, dimensions=self._dim
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Провайдер эмбеддингов не поддержал dimensions={self._dim} ({exc}), повтор без параметра")
+            response = await self._client.embeddings.create(model=self.model, input=texts)
+        ordered = sorted(response.data, key=lambda item: item.index)
+        vectors = [list(item.embedding) for item in ordered]
+        if vectors and len(vectors[0]) != self._dim:
+            logger.warning(
+                f"Модель эмбеддингов вернула размерность {len(vectors[0])}, ожидалось {self._dim} — обрезаю вектор"
+            )
+            vectors = [v[: self._dim] for v in vectors]
+        return vectors
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+
 class LocalEmbeddingsClient:
     """sentence-transformers, лениво загружается при первом обращении.
 
@@ -87,7 +128,21 @@ def _hash_embedding(text: str, dim: int) -> list[float]:
 
 
 @lru_cache
-def get_embeddings_client() -> LocalEmbeddingsClient:
+def get_embeddings_client() -> EmbeddingsClient:
+    provider = (settings.embeddings_provider or "local").strip().lower()
+    if provider in ("openai", "openrouter", "api"):
+        if not settings.embeddings_api_key:
+            logger.warning(
+                f"EMBEDDINGS_PROVIDER={provider}, но EMBEDDINGS_API_KEY не задан — "
+                "использую локальную модель эмбеддингов вместо API"
+            )
+        else:
+            return OpenRouterEmbeddingsClient(
+                base_url=settings.embeddings_api_base,
+                api_key=settings.embeddings_api_key,
+                model=settings.embeddings_model,
+                dim=settings.llm_embedding_dim,
+            )
     return LocalEmbeddingsClient(settings.embeddings_model)
 
 

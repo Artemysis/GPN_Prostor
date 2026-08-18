@@ -189,6 +189,40 @@ async def seed_package_templates() -> None:
             logger.warning(f"MinIO недоступен при сидировании шаблона {filename}: {exc}")
 
 
+async def seed_embeddings(db: AsyncSession) -> None:
+    """Векторизует справочники и шаблоны ТЗ сразу после сидирования (§4.3 SPEC),
+    чтобы семантический поиск был доступен без ручного вызова /admin/embeddings/rebuild."""
+    from sqlalchemy import func, select
+
+    from app.db.models import Company, Embedding, Product, TzTemplate
+    from app.services.embeddings import upsert_embedding
+
+    count = (await db.execute(select(func.count()).select_from(Embedding))).scalar_one()
+    if count > 0:
+        logger.info("Эмбеддинги уже сформированы, пропускаю сидирование векторов")
+        return
+
+    try:
+        products = (await db.execute(select(Product))).scalars().all()
+        for p in products:
+            await upsert_embedding(db, "product", p.product_id, p.product_name)
+
+        companies = (await db.execute(select(Company))).scalars().all()
+        for c in companies:
+            await upsert_embedding(db, "company_services", c.company_id, c.services or c.name)
+
+        templates = (await db.execute(select(TzTemplate))).scalars().all()
+        for t in templates:
+            await upsert_embedding(db, "tz_template", str(t.id), f"{t.name} {t.description or ''}")
+
+        logger.info(
+            f"Сформированы эмбеддинги: products={len(products)}, "
+            f"companies={len(companies)}, templates={len(templates)}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Не удалось сформировать эмбеддинги при старте: {exc}")
+
+
 async def run_seed(db: AsyncSession) -> None:
     try:
         get_minio_service().ensure_buckets()
@@ -197,3 +231,4 @@ async def run_seed(db: AsyncSession) -> None:
     await seed_xlsx(db)
     await seed_tz_templates(db)
     await seed_package_templates()
+    await seed_embeddings(db)
