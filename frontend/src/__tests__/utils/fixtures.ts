@@ -1,4 +1,4 @@
-import { Company, Contract, Product, RequestRecord, TzTemplate, TzTemplateSummary } from '@/lib/api'
+import { ChatMessage, Company, Contract, Product, RequestRecord, RequestTz, TzStage, TzTemplate, TzTemplateSummary } from '@/lib/api'
 
 /** Канонические тестовые фикстуры, соответствующие схемам api/types.ts */
 
@@ -107,6 +107,60 @@ export function makeRequest(overrides: Partial<RequestRecord> = {}): RequestReco
 export const REQUEST_ID = 'req-e2e-1'
 export const CHAT_SESSION_ID = 'sess-1'
 export const JOB_ID = 'job-1'
+
+let tzSeq = 0
+
+/** ТЗ по фикстурному шаблону T-1; блоки намеренно не по порядку (проверка сортировки) */
+export function makeTz(overrides: Partial<RequestTz> = {}): RequestTz {
+  tzSeq += 1
+  return {
+    tz_id: `tz-${tzSeq}`,
+    request_id: REQUEST_ID,
+    template_id: 'T-1',
+    version: 1,
+    completeness_pct: 0,
+    payload: {},
+    blocks: [
+      { block_code: 'signatures', block_name: 'Подписи сторон', content: {}, filled_by: 'manual', is_complete: false, completeness_pct: 0 },
+      { block_code: 'goals', block_name: 'Цели и задачи работ', content: {}, filled_by: 'manual', is_complete: false, completeness_pct: 0 },
+      { block_code: 'work_content', block_name: 'Содержание работ', content: {}, filled_by: 'manual', is_complete: false, completeness_pct: 0 },
+      { block_code: 'scope', block_name: 'Периметр работ', content: {}, filled_by: 'manual', is_complete: false, completeness_pct: 0 },
+    ],
+    stages: [],
+    ...overrides,
+  }
+}
+
+export function makeStage(overrides: Partial<TzStage> = {}): TzStage {
+  const seq = (tzSeq * 100) + (overrides.stage_order ?? 1)
+  return {
+    id: `stage-${seq}`,
+    stage_order: 1,
+    stage_name: 'Этап',
+    requirements: '',
+    expected_results: '',
+    description: '',
+    stage_start_date: null,
+    stage_end_date: null,
+    filled_by: 'manual',
+    ...overrides,
+  }
+}
+
+let msgSeq = 0
+
+export function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  msgSeq += 1
+  return {
+    id: `msg-${msgSeq}`,
+    role: 'assistant',
+    content: 'Ответ ИИ',
+    actions: null,
+    suggestions: null,
+    created_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
 
 /** SSE-тело ответа чата как его отдаёт бэкенд */
 export function sseBody(...events: object[]): string {
