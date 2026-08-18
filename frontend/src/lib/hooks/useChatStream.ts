@@ -17,7 +17,9 @@ export function useChatStream(sessionId: string | null) {
     api
       .getChatMessages(sessionId)
       .then((msgs) => {
-        if (active) setMessages(msgs)
+        // Не затираем локальные сообщения, если пользователь уже начал стримить:
+        // ответ истории может прийти позже начала отправки (race condition).
+        if (active && !streamRef.current) setMessages(msgs)
       })
       .catch(() => undefined)
     return () => {

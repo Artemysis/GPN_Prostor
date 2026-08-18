@@ -39,7 +39,6 @@ async def test_create_tz_and_patch_block(client, db_session):
 
     created = await client.post(f"/requests/{request_id}/tz", json={"template_id": str(template.id)})
     assert created.status_code == 201
-    tz_id = created.json()["tz_id"]
     assert created.json()["completeness_pct"] == 0
 
     patched = await client.patch(
