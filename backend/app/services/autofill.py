@@ -5,9 +5,10 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.models import ChatSession, Request, RequestTz, TzTemplate
-from app.services.tz_builder import create_tz_from_template
+from app.services.tz_builder import create_tz_from_template, prefill_existing_tz, tz_is_empty
 
 REQUEST_FIELDS = {"company_id", "contract_id", "product_id", "title", "description", "cost_total", "date_start", "date_end"}
 
@@ -52,6 +53,27 @@ async def apply_actions(db: AsyncSession, request: Request, actions: list[dict[s
     return applied
 
 
+async def _prefill_with_ai(db: AsyncSession, request: Request, template: TzTemplate) -> dict[str, Any]:
+    """ИИ-черновик блоков ТЗ + оценка стоимости (если у заявки её ещё нет)."""
+    from app.services.llm_client import get_llm_client
+    from app.services.tz_builder import generate_tz_prefill
+
+    await db.refresh(request)
+    request_context = {
+        "title": request.title,
+        "description": request.description,
+        "product_id": request.product_id,
+        "company_id": request.company_id,
+    }
+    prefill, estimated_cost = await generate_tz_prefill(template, request_context, get_llm_client())
+    if estimated_cost and request.cost_total is None:
+        request.cost_total = estimated_cost
+        meta = dict(request.request_metadata or {})
+        meta.setdefault("filled_by", {})["cost_total"] = "ai"
+        request.request_metadata = meta
+    return prefill
+
+
 async def autofill_from_session(
     db: AsyncSession,
     session: ChatSession,
@@ -67,28 +89,42 @@ async def autofill_from_session(
 
     tz_diff: dict[str, Any] = {}
     template_action = next((a for a in actions if a.get("type") == "suggest_template"), None)
-    existing_tz = (await db.execute(select(RequestTz).where(RequestTz.request_id == request.id))).scalar_one_or_none()
+    existing_tz = (
+        (
+            await db.execute(
+                select(RequestTz)
+                .where(RequestTz.request_id == request.id)
+                .options(selectinload(RequestTz.blocks), selectinload(RequestTz.stages))
+            )
+        )
+        .scalar_one_or_none()
+    )
     if template_action and existing_tz is None:
         template = await db.get(TzTemplate, template_action["template_id"])
         if template:
-            from app.services.llm_client import get_llm_client
-            from app.services.tz_builder import generate_tz_prefill
-
-            await db.refresh(request)
-            request_context = {
-                "title": request.title,
-                "description": request.description,
-                "product_id": request.product_id,
-                "company_id": request.company_id,
-            }
-            prefill, estimated_cost = await generate_tz_prefill(template, request_context, get_llm_client())
-            if estimated_cost and request.cost_total is None:
-                request.cost_total = estimated_cost
-                meta = dict(request.request_metadata or {})
-                meta.setdefault("filled_by", {})["cost_total"] = "ai"
-                request.request_metadata = meta
+            prefill = await _prefill_with_ai(db, request, template)
             tz = await create_tz_from_template(db, request.id, template, prefill=prefill)
-            tz_diff = {"tz_id": str(tz.id), "template_id": str(template.id), "completeness_pct": tz.completeness_pct}
+            tz_diff = {
+                "tz_id": str(tz.id),
+                "template_id": str(template.id),
+                "completeness_pct": tz.completeness_pct,
+                "ai_draft": bool(prefill),
+            }
+    elif template_action and existing_tz is not None and tz_is_empty(existing_tz):
+        # ТЗ создано вручную (кликом по карточке шаблона), но ни один блок не заполнен —
+        # заполняем его ИИ-черновиком, как при создании с prefill. Заполненное вручную
+        # ТЗ не перезаписываем.
+        template = await db.get(TzTemplate, existing_tz.template_id)
+        if template:
+            prefill = await _prefill_with_ai(db, request, template)
+            tz = await prefill_existing_tz(db, existing_tz, template, prefill) if prefill else existing_tz
+            tz_diff = {
+                "tz_id": str(tz.id),
+                "template_id": str(template.id),
+                "completeness_pct": tz.completeness_pct,
+                "ai_draft": bool(prefill),
+                "filled_existing": True,
+            }
 
     request_diff = {a["field"]: a["new"] for a in applied}
     return {"applied": applied, "request_diff": request_diff, "tz_diff": tz_diff}

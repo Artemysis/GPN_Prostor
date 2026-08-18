@@ -103,6 +103,93 @@ async def create_tz_from_template(
     return tz
 
 
+def tz_is_empty(tz: RequestTz) -> bool:
+    """ТЗ без единого заполненного блока — например, создан кликом по карточке шаблона."""
+    return all(not b.content for b in tz.blocks)
+
+
+async def _stages_untouched(db: AsyncSession, tz: RequestTz, template: TzTemplate) -> bool:
+    """Этапы ТЗ совпадают с дефолтными этапами шаблона (пользователь их не менял)."""
+    template_stages = (
+        await db.execute(
+            select(TzTemplateStage)
+            .where(TzTemplateStage.template_id == template.id)
+            .order_by(TzTemplateStage.stage_order)
+        )
+    ).scalars().all()
+    tz_stages = sorted(tz.stages, key=lambda s: s.stage_order)
+    if len(tz_stages) != len(template_stages):
+        return False
+    return all(
+        ts.stage_name == ds.stage_name
+        and (ts.requirements or None) == (ds.default_requirements or None)
+        and (ts.expected_results or None) == (ds.default_results or None)
+        for ts, ds in zip(tz_stages, template_stages)
+    )
+
+
+async def prefill_existing_tz(
+    db: AsyncSession,
+    tz: RequestTz,
+    template: TzTemplate,
+    prefill: dict[str, Any],
+) -> RequestTz:
+    """Заполняет существующее ТЗ ИИ-черновиком: блоки, этапы и полноту — как при создании с prefill.
+
+    Вызывается из «Применить и создать ТЗ», когда ТЗ уже создано (карточкой шаблона).
+    Заполненные вручную блоки и изменённые пользователем этапы не перезаписываются.
+    """
+    blocks = _blocks_from_schema(template.blocks_schema)
+    payload = dict(tz.payload or {})
+    block_rows = {b.block_code: b for b in tz.blocks}
+
+    for block in blocks:
+        code = block["code"]
+        content = prefill.get(code)
+        row = block_rows.get(code)
+        if row is not None and not row.content and content:
+            row.content = content
+            row.filled_by = "ai"
+            completeness = compute_block_completeness(block, content)
+            row.completeness_pct = completeness
+            row.is_complete = completeness >= 100
+            payload[code] = content
+        else:
+            payload.setdefault(code, {})
+
+    stages_prefill = (
+        prefill.get("work_content", {}).get("stages")
+        if isinstance(prefill.get("work_content"), dict)
+        else None
+    )
+    if stages_prefill and await _stages_untouched(db, tz, template):
+        # ИИ-этапы заменяют дефолтные этапы шаблона — как при создании ТЗ с prefill
+        tz.stages.clear()
+        for stage in stages_prefill:
+            db.add(
+                RequestTzStage(
+                    tz_id=tz.id,
+                    stage_order=stage.get("stage_order", 0),
+                    stage_name=stage.get("stage_name", "Этап"),
+                    requirements=stage.get("requirements"),
+                    expected_results=stage.get("expected_results"),
+                    description=stage.get("description"),
+                    stage_start_date=_stage_date(stage.get("stage_start_date")),
+                    stage_end_date=_stage_date(stage.get("stage_end_date")),
+                    filled_by="ai",
+                )
+            )
+        payload["work_content"] = prefill["work_content"]
+
+    tz.payload = dict(payload)
+    overall, _ = compute_overall_completeness(template, payload)
+    tz.completeness_pct = overall
+    db.add(TzCompletenessLog(tz_id=tz.id, completeness_pct=overall, triggered_by="ai"))
+    await db.commit()
+    await db.refresh(tz)
+    return tz
+
+
 FILL_AI_SYSTEM_PROMPT = (
     "Ты — ИИ-консультант платформы ПРОСТОР. Заполни блок «{block_name}» ТЗ типа «{template_name}» "
     "как черновик на основе контекста заявки. Используй доменные знания нефтегазовой отрасли. "

@@ -63,12 +63,20 @@ export function AiChat({
     try {
       const result = await applyActions(actions)
       if (result && (result.applied.length > 0 || result.tz_diff?.tz_id)) {
-        toast(
-          result.tz_diff?.tz_id
-            ? `Применено предложений: ${result.applied.length}. ТЗ создано — черновик готов к проверке`
-            : `Применено предложений: ${result.applied.length}`,
-          'success',
-        )
+        const tz = result.tz_diff
+        const appliedPart = `Применено предложений: ${result.applied.length}`
+        let message = appliedPart
+        let kind: 'success' | 'error' = 'success'
+        if (tz?.tz_id && tz.ai_draft === false) {
+          // ИИ-черновик не удалось сгенерировать — ТЗ пустое, не вводим в заблуждение
+          message = `${appliedPart}. ИИ-черновик недоступен — заполните блоки ТЗ вручную или кнопкой «Заполнить ИИ»`
+          kind = 'error'
+        } else if (tz?.tz_id && tz.filled_existing) {
+          message = `${appliedPart}. ТЗ заполнено ИИ-черновиком — готово к проверке`
+        } else if (tz?.tz_id) {
+          message = `${appliedPart}. ТЗ создано — черновик готов к проверке`
+        }
+        toast(message, kind)
         onApplied?.(result)
       } else {
         toast('Не удалось применить предложения', 'error')

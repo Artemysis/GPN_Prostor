@@ -131,4 +131,80 @@ describe('AiChat', () => {
       useUiStore.getState().toasts.some((t) => t.message.includes('ТЗ создано')),
     ).toBe(true)
   })
+
+  it('применение к существующему ТЗ: toast про заполненное ИИ-черновиком ТЗ', async () => {
+    stubSession()
+    useUiStore.setState({ toasts: [] })
+    server.use(
+      http.get(`*/api/v1/chat/sessions/${CHAT_SESSION_ID}/messages`, () =>
+        HttpResponse.json([
+          {
+            id: 'm-2',
+            role: 'assistant',
+            content: 'предлагаю',
+            actions: [
+              { type: 'set_field', field: 'product_id', value: 'P-1', confidence: 0.9 },
+              { type: 'suggest_template', template_id: 'T-1', confidence: 0.8 },
+            ],
+            created_at: '2026-01-01T00:00:01Z',
+          },
+        ]),
+      ),
+      http.post(`*/api/v1/chat/sessions/${CHAT_SESSION_ID}/apply`, () =>
+        HttpResponse.json({
+          applied: [{ field: 'product_id', old: null, new: 'P-1' }],
+          request_diff: { product_id: 'P-1' },
+          tz_diff: { tz_id: 'tz-9', template_id: 'T-1', completeness_pct: 80, ai_draft: true, filled_existing: true },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<AiChat requestId={REQUEST_ID} />)
+
+    await user.click(await screen.findByRole('button', { name: /Применить и создать ТЗ/ }))
+
+    await waitFor(() =>
+      expect(
+        useUiStore.getState().toasts.some((t) => t.message.includes('ТЗ заполнено ИИ-черновиком')),
+      ).toBe(true),
+    )
+  })
+
+  it('без ИИ-черновика: toast честно сообщает, что ТЗ осталось пустым', async () => {
+    stubSession()
+    useUiStore.setState({ toasts: [] })
+    server.use(
+      http.get(`*/api/v1/chat/sessions/${CHAT_SESSION_ID}/messages`, () =>
+        HttpResponse.json([
+          {
+            id: 'm-2',
+            role: 'assistant',
+            content: 'предлагаю',
+            actions: [
+              { type: 'set_field', field: 'product_id', value: 'P-1', confidence: 0.9 },
+              { type: 'suggest_template', template_id: 'T-1', confidence: 0.8 },
+            ],
+            created_at: '2026-01-01T00:00:01Z',
+          },
+        ]),
+      ),
+      http.post(`*/api/v1/chat/sessions/${CHAT_SESSION_ID}/apply`, () =>
+        HttpResponse.json({
+          applied: [{ field: 'product_id', old: null, new: 'P-1' }],
+          request_diff: { product_id: 'P-1' },
+          tz_diff: { tz_id: 'tz-9', template_id: 'T-1', completeness_pct: 0, ai_draft: false },
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(<AiChat requestId={REQUEST_ID} />)
+
+    await user.click(await screen.findByRole('button', { name: /Применить и создать ТЗ/ }))
+
+    await waitFor(() => {
+      const toasts = useUiStore.getState().toasts
+      expect(toasts.some((t) => t.message.includes('ИИ-черновик недоступен'))).toBe(true)
+      expect(toasts.some((t) => t.message.includes('ТЗ создано — черновик готов'))).toBe(false)
+    })
+  })
 })
