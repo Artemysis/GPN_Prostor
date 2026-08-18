@@ -102,19 +102,27 @@ describe('useChatStream', () => {
     server.use(
       http.get(`*/api/v1/chat/sessions/${CHAT_SESSION_ID}/messages`, () => HttpResponse.json([])),
       http.post(`*/api/v1/chat/sessions/${CHAT_SESSION_ID}/apply`, () =>
-        HttpResponse.json({ applied: [{ field: 'product_id', old: null, new: 'P-1' }] }),
+        HttpResponse.json({
+          applied: [{ field: 'product_id', old: null, new: 'P-1' }],
+          request_diff: {},
+          tz_diff: {},
+        }),
       ),
     )
     const { result } = renderHook(() => useChatStream(CHAT_SESSION_ID), { wrapper: createWrapper() })
     const action = { type: 'set_field' as const, field: 'product_id', value: 'P-1', confidence: 0.9 }
 
     // Act
-    let applied: { field: string }[] = []
+    let applied: Awaited<ReturnType<typeof result.current.applyActions>> = null
     await act(async () => {
       applied = await result.current.applyActions([action])
     })
 
     // Assert
-    expect(applied).toEqual([{ field: 'product_id', old: '—', new: 'P-1' }])
+    expect(applied).toEqual({
+      applied: [{ field: 'product_id', old: null, new: 'P-1' }],
+      request_diff: {},
+      tz_diff: {},
+    })
   })
 })
