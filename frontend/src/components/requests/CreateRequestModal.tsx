@@ -60,6 +60,11 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
       .finally(() => setCreatingTz(false))
   }
 
+  const handleApplied = (result: { tz_diff?: { tz_id?: string } } | null) => {
+    invalidate()
+    if (result?.tz_diff?.tz_id) setHasTz(true)
+  }
+
   return (
     <Modal
       open={open}
@@ -97,7 +102,7 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
                   <AiChat
                     className="min-h-0 flex-1"
                     requestId={requestId}
-                    onApplied={invalidate}
+                    onApplied={handleApplied}
                     onCreateTz={createTz}
                   />
                   <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
@@ -130,7 +135,26 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
               </div>
             </>
           ) : (
-            <RequestWorkspace requestId={requestId} />
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <StepChip onClick={() => setHasTz(false)}>1. Шапка заявки</StepChip>
+                  <span className="h-px w-6 bg-slate-200" />
+                  <StepChip active>2. Конструктор ТЗ</StepChip>
+                  <span className="h-px w-6 bg-slate-200" />
+                  <StepChip>3. Анализ и выгрузка</StepChip>
+                </div>
+                <button
+                  onClick={() => setHasTz(false)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-brand-400 hover:text-brand-800"
+                >
+                  ← Изменить шапку заявки
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <RequestWorkspace requestId={requestId} />
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -138,15 +162,18 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
   )
 }
 
-function StepChip({ active, children }: { active?: boolean; children: React.ReactNode }) {
+function StepChip({ active, children, onClick }: { active?: boolean; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <span
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
       className={
-        'rounded-full px-3 py-1 font-medium ' +
-        (active ? 'bg-brand-800 text-white' : 'border border-slate-200 bg-white text-slate-400')
+        'rounded-full px-3 py-1 font-medium transition-colors ' +
+        (active ? 'bg-brand-800 text-white' : 'border border-slate-200 bg-white ' + (onClick ? 'cursor-pointer text-slate-600 hover:border-brand-400 hover:text-brand-800' : 'text-slate-400'))
       }
     >
       {children}
-    </span>
+    </button>
   )
 }

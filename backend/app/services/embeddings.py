@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from functools import lru_cache
 from typing import Protocol
@@ -12,6 +13,8 @@ from app.db.models import Embedding
 
 settings = get_settings()
 
+MODEL_LOAD_TIMEOUT_S = 180
+
 
 class EmbeddingsClient(Protocol):
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
@@ -23,6 +26,10 @@ class EmbeddingsClient(Protocol):
 class LocalEmbeddingsClient:
     """sentence-transformers, лениво загружается при первом обращении.
 
+    Загрузка/инференс выполняются в отдельном потоке, чтобы не блокировать
+    event loop; при невозможности загрузить модель за отведённый таймаут
+    используется детерминированный hash-фолбэк (демо/офлайн-режим).
+
     Использует префиксы e5: "passage: " при индексации, "query: " при поиске —
     вызывающий код обязан подставлять их сам (см. semantic_search.py).
     """
@@ -31,24 +38,39 @@ class LocalEmbeddingsClient:
         self.model_name = model_name
         self._model = None
         self._dim = settings.llm_embedding_dim
+        self._lock = asyncio.Lock()
 
-    def _load(self):
-        if self._model is None:
-            try:
+    async def _ensure_model(self):
+        if self._model is not None or self._model is False:
+            return
+        async with self._lock:
+            if self._model is not None or self._model is False:
+                return
+
+            def _load_sync():
                 from sentence_transformers import SentenceTransformer
 
-                self._model = SentenceTransformer(self.model_name)
-                dim_fn = getattr(self._model, "get_embedding_dimension", None) or self._model.get_sentence_embedding_dimension
-                self._dim = dim_fn()
+                model = SentenceTransformer(self.model_name)
+                dim_fn = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+                return model, dim_fn()
+
+            try:
+                self._model, self._dim = await asyncio.wait_for(
+                    asyncio.to_thread(_load_sync), timeout=MODEL_LOAD_TIMEOUT_S
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"Не удалось загрузить sentence-transformers ({exc}), использую hash-фолбэк")
                 self._model = False
-        return self._model
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        model = self._load()
+        await self._ensure_model()
+        model = self._model
         if model:
-            return model.encode(list(texts), normalize_embeddings=True).tolist()
+
+            def _encode_sync():
+                return model.encode(list(texts), normalize_embeddings=True).tolist()
+
+            return await asyncio.to_thread(_encode_sync)
         return [_hash_embedding(text, self._dim) for text in texts]
 
     @property

@@ -1,15 +1,26 @@
 import uuid
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import RequestTz, RequestTzBlock, RequestTzStage, TzTemplate, TzTemplateStage
+from app.db.models import RequestTz, RequestTzBlock, RequestTzStage, TzCompletenessLog, TzTemplate, TzTemplateStage
 from app.services.llm_client import DeepSeekLLMClient, get_llm_client
+from app.services.tz_analyzer import compute_block_completeness, compute_overall_completeness
 
 
 def _blocks_from_schema(blocks_schema: dict) -> list[dict]:
     return sorted(blocks_schema.get("blocks", []), key=lambda b: b.get("order", 0))
+
+
+def _stage_date(value: Any) -> date | None:
+    if value is None or isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
 
 
 async def create_tz_from_template(
@@ -26,15 +37,16 @@ async def create_tz_from_template(
     for block in _blocks_from_schema(template.blocks_schema):
         code = block["code"]
         content = (prefill or {}).get(code, {})
-        filled_by = "ai" if content else "manual"
+        completeness = compute_block_completeness(block, content) if content else 0
         db.add(
             RequestTzBlock(
                 tz_id=tz.id,
                 block_code=code,
                 block_name=block.get("name", code),
                 content=content,
-                filled_by=filled_by,
-                is_complete=False,
+                filled_by="ai" if content else "manual",
+                is_complete=completeness >= 100,
+                completeness_pct=completeness,
             )
         )
         payload[code] = content
@@ -68,11 +80,16 @@ async def create_tz_from_template(
                 requirements=stage.get("requirements"),
                 expected_results=stage.get("expected_results"),
                 description=stage.get("description"),
+                stage_start_date=_stage_date(stage.get("stage_start_date")),
+                stage_end_date=_stage_date(stage.get("stage_end_date")),
                 filled_by="ai" if prefill else "manual",
             )
         )
 
     tz.payload = payload
+    overall, _ = compute_overall_completeness(template, payload)
+    tz.completeness_pct = overall
+    db.add(TzCompletenessLog(tz_id=tz.id, completeness_pct=overall, triggered_by="ai" if prefill else "user"))
     await db.commit()
     await db.refresh(tz)
     return tz
@@ -208,3 +225,144 @@ async def fill_stages_with_ai(
             if s.stage_name not in existing_stage_names
         ]
     return stages
+
+
+TZ_PREFILL_SYSTEM_PROMPT = (
+    "Ты — ИИ-консультант платформы ПРОСТОР. Заполни черновик технического задания типа «{template_name}» "
+    "по контексту заявки. Используй domain-знания нефтегазовой отрасли: формулируй конкретно и профессионально. "
+    "Это предложение-черновик: пользователь проверит и отредактирует. Отвечай строго JSON."
+)
+
+
+def _prefill_json_schema(blocks: list[dict]) -> dict:
+    properties: dict[str, Any] = {}
+    for block in blocks:
+        code = block["code"]
+        if block.get("is_stages_block"):
+            properties[code] = {
+                "type": "object",
+                "properties": {
+                    "stages": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "stage_name": {"type": "string"},
+                                "requirements": {"type": "string"},
+                                "expected_results": {"type": "string"},
+                            },
+                            "required": ["stage_name", "requirements", "expected_results"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["stages"],
+                "additionalProperties": False,
+            }
+        else:
+            field_props: dict[str, Any] = {}
+            for f in block.get("fields", []):
+                if f.get("type") == "list":
+                    field_props[f["key"]] = {"type": "array", "items": {"type": "string"}}
+                else:
+                    field_props[f["key"]] = {"type": "string"}
+            properties[code] = {
+                "type": "object",
+                "properties": field_props,
+                "required": list(field_props.keys()),
+                "additionalProperties": False,
+            }
+    properties["estimated_cost_rub"] = {"type": "number"}
+    return {
+        "name": "tz_prefill",
+        "schema": {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties.keys()),
+            "additionalProperties": False,
+        },
+    }
+
+
+def _sanitize_prefill(blocks: list[dict], raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Приводит ответ LLM к схеме блоков: отбрасывает пустое и неверное."""
+    result: dict[str, Any] = {}
+    if not isinstance(raw, dict):
+        return result
+    for block in blocks:
+        code = block["code"]
+        value = raw.get(code)
+        if not isinstance(value, dict):
+            continue
+        if block.get("is_stages_block"):
+            stages: list[dict[str, Any]] = []
+            for s in value.get("stages") or []:
+                if not isinstance(s, dict):
+                    continue
+                name = str(s.get("stage_name") or "").strip()
+                if not name:
+                    continue
+                stages.append(
+                    {
+                        "stage_order": len(stages) + 1,
+                        "stage_name": name,
+                        "requirements": str(s.get("requirements") or "").strip() or None,
+                        "expected_results": str(s.get("expected_results") or "").strip() or None,
+                    }
+                )
+            if stages:
+                result[code] = {"stages": stages}
+        else:
+            content: dict[str, Any] = {}
+            for f in block.get("fields", []):
+                v = value.get(f["key"])
+                if v is None:
+                    continue
+                if f.get("type") == "list":
+                    if isinstance(v, list):
+                        items = [str(x).strip() for x in v if str(x).strip()]
+                        if items:
+                            content[f["key"]] = items
+                else:
+                    text = str(v).strip()
+                    if text:
+                        content[f["key"]] = text
+            if content:
+                result[code] = content
+    return result
+
+
+async def generate_tz_prefill(
+    template: TzTemplate,
+    request_context: dict[str, Any],
+    llm: DeepSeekLLMClient | None = None,
+) -> tuple[dict[str, Any], float | None]:
+    """Черновик всех блоков ТЗ + оценка стоимости одним LLM-вызовом.
+
+    Оценка стоимости выполняется в конце — на основе сгенерированного содержания ТЗ.
+    При недоступности LLM — пустой prefill без оценки.
+    """
+    llm = llm or get_llm_client()
+    blocks = _blocks_from_schema(template.blocks_schema)
+    if not llm.enabled:
+        return {}, None
+
+    system_prompt = TZ_PREFILL_SYSTEM_PROMPT.format(template_name=template.name)
+    user_prompt = (
+        f"Контекст заявки: {request_context}\n"
+        f"Структура блоков ТЗ: {[(b['code'], b.get('name')) for b in blocks]}\n"
+        "Верни JSON, где ключ верхнего уровня — код блока, значение — объект с полями блока "
+        "(для блока содержания работ — ключ stages с массивом этапов). "
+        "Дополнительно оцени суммарную стоимость работ в рублях по содержанию ТЗ — "
+        "ключ estimated_cost_rub."
+    )
+    raw = await llm.chat_json(system_prompt, user_prompt, _prefill_json_schema(blocks))
+    estimated_cost = None
+    if isinstance(raw, dict):
+        try:
+            value = float(raw.get("estimated_cost_rub") or 0)
+            if value > 0:
+                estimated_cost = value
+        except (TypeError, ValueError):
+            estimated_cost = None
+    return _sanitize_prefill(blocks, raw), estimated_cost

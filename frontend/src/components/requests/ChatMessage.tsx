@@ -16,6 +16,7 @@ const fieldLabels: Record<string, string> = {
   date_start: 'Начало',
   date_end: 'Окончание',
   title: 'Название',
+  description: 'Описание',
 }
 
 function resolveValue(
@@ -97,8 +98,10 @@ function ActionsPanel({
           </div>
           <div className="mt-2.5 flex items-center justify-between">
             <p className="text-[11px] text-brand-700/70">Ничего не применяется без вашего подтверждения</p>
-            <Button size="sm" disabled={chosen.length === 0} onClick={() => onApply(chosen)}>
-              Применить выбранные ({chosen.length})
+            <Button size="sm" disabled={chosen.length === 0} onClick={() => onApply(templateAction ? [...chosen, templateAction] : chosen)}>
+              {templateAction
+                ? `Применить и создать ТЗ (${chosen.length})`
+                : `Применить выбранные (${chosen.length})`}
             </Button>
           </div>
         </div>

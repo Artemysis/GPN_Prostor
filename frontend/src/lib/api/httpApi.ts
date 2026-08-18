@@ -2,7 +2,7 @@ import { http, API_URL } from './client'
 import type {
   AnalyticsSearch,
   AnalyticsTz,
-  AppliedDiff,
+  ApplyResult,
   CalculationStage,
   ChatAction,
   ChatEvent,
@@ -248,11 +248,8 @@ export async function streamChat(sessionId: string, content: string, onEvent: (e
   }
 }
 
-export async function applyActions(sessionId: string, actions: ChatAction[]): Promise<AppliedDiff[]> {
-  const data = await req<{ applied: { field: string; old: unknown; new: unknown }[] }>(() =>
-    http.post(`/chat/sessions/${sessionId}/apply`, { actions }),
-  )
-  return data.applied.map((a) => ({ field: a.field, old: a.old == null ? '—' : String(a.old), new: String(a.new) }))
+export async function applyActions(sessionId: string, actions: ChatAction[]): Promise<ApplyResult> {
+  return req<ApplyResult>(() => http.post(`/chat/sessions/${sessionId}/apply`, { actions }))
 }
 
 // --- Документы / выгрузка ----------------------------------------------------

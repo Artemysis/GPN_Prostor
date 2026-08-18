@@ -67,12 +67,25 @@ async def get_chat_messages(session_id: uuid.UUID, db: AsyncSession = Depends(ge
 
 @router.post("/chat/sessions/{session_id}/messages")
 async def post_chat_message(session_id: uuid.UUID, body: ChatMessageCreate, db: AsyncSession = Depends(get_db)):
-    session = await _get_session(db, session_id)
+    session = await _get_session(db, session_id, with_messages=False)
     request_context = None
     if session.request_id:
         request = await db.get(Request, session.request_id)
         if request:
-            request_context = {"title": request.title, "company_id": request.company_id, "product_id": request.product_id}
+            request_context = {
+                k: v
+                for k, v in {
+                    "title": request.title,
+                    "description": request.description,
+                    "company_id": request.company_id,
+                    "contract_id": request.contract_id,
+                    "product_id": request.product_id,
+                    "cost_total": float(request.cost_total) if request.cost_total is not None else None,
+                    "date_start": request.date_start.isoformat() if request.date_start else None,
+                    "date_end": request.date_end.isoformat() if request.date_end else None,
+                }.items()
+                if v
+            }
 
     generator = run_chat_turn(db, session, body.content, request_context)
     return StreamingResponse(generator, media_type="text/event-stream")
@@ -98,8 +111,10 @@ async def apply_session_actions(session_id: uuid.UUID, body: ChatApplyRequest, d
     request = await db.get(Request, session.request_id)
     if request is None:
         raise NotFoundError("Заявка не найдена")
-    applied = await apply_actions(db, request, body.actions)
-    return ChatApplyResponse(applied=applied)
+    # autofill_from_session применяет и set_field-действия, и suggest_template
+    # (создаёт ТЗ с ИИ-черновиком) — одно нажатие «Применить» заполняет всё.
+    result = await autofill_from_session(db, session, request, body.actions)
+    return ChatApplyResponse(**result)
 
 
 @router.delete("/chat/sessions/{session_id}", status_code=204)

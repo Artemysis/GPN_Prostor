@@ -272,6 +272,12 @@ export interface AppliedDiff {
   new: string
 }
 
+export interface ApplyResult {
+  applied: { field: string; old: unknown; new: unknown }[]
+  request_diff: Record<string, unknown>
+  tz_diff: { tz_id?: string; template_id?: string; completeness_pct?: number }
+}
+
 export interface RequestInput {
   title?: string
   description?: string

@@ -82,9 +82,9 @@ export function useChatStream(sessionId: string | null) {
 
   const applyActions = useCallback(
     async (actions: ChatAction[]) => {
-      if (!sessionId) return []
-      const applied = await api.applyActions(sessionId, actions)
-      const appliedFields = new Set(applied.map((a) => a.field))
+      if (!sessionId) return null
+      const result = await api.applyActions(sessionId, actions)
+      const appliedFields = new Set(result.applied.map((a) => a.field))
       setMessages((prev) =>
         prev.map((m) =>
           m.actions
@@ -92,7 +92,7 @@ export function useChatStream(sessionId: string | null) {
             : m,
         ),
       )
-      return applied
+      return result
     },
     [sessionId],
   )

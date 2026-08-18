@@ -1,5 +1,6 @@
 """Применение actions чата к заявке (§3.5.5-6 SPEC) — только по явному вызову пользователя."""
 
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
@@ -11,6 +12,24 @@ from app.services.tz_builder import create_tz_from_template
 REQUEST_FIELDS = {"company_id", "contract_id", "product_id", "title", "description", "cost_total", "date_start", "date_end"}
 
 
+def _coerce(field: str, value: Any) -> Any:
+    if value is None:
+        return None
+    if field in {"date_start", "date_end"}:
+        if isinstance(value, date):
+            return value
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+    if field == "cost_total":
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    return str(value)
+
+
 async def apply_actions(db: AsyncSession, request: Request, actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     applied = []
     for action in actions:
@@ -19,8 +38,10 @@ async def apply_actions(db: AsyncSession, request: Request, actions: list[dict[s
         field = action.get("field")
         if field not in REQUEST_FIELDS:
             continue
+        new = _coerce(field, action.get("value"))
+        if new is None:
+            continue
         old = getattr(request, field)
-        new = action.get("value")
         setattr(request, field, new)
         meta = dict(request.request_metadata or {})
         filled_by = meta.setdefault("filled_by", {})
@@ -50,8 +71,24 @@ async def autofill_from_session(
     if template_action and existing_tz is None:
         template = await db.get(TzTemplate, template_action["template_id"])
         if template:
-            tz = await create_tz_from_template(db, request.id, template)
-            tz_diff = {"tz_id": str(tz.id), "template_id": str(template.id)}
+            from app.services.llm_client import get_llm_client
+            from app.services.tz_builder import generate_tz_prefill
+
+            await db.refresh(request)
+            request_context = {
+                "title": request.title,
+                "description": request.description,
+                "product_id": request.product_id,
+                "company_id": request.company_id,
+            }
+            prefill, estimated_cost = await generate_tz_prefill(template, request_context, get_llm_client())
+            if estimated_cost and request.cost_total is None:
+                request.cost_total = estimated_cost
+                meta = dict(request.request_metadata or {})
+                meta.setdefault("filled_by", {})["cost_total"] = "ai"
+                request.request_metadata = meta
+            tz = await create_tz_from_template(db, request.id, template, prefill=prefill)
+            tz_diff = {"tz_id": str(tz.id), "template_id": str(template.id), "completeness_pct": tz.completeness_pct}
 
     request_diff = {a["field"]: a["new"] for a in applied}
     return {"applied": applied, "request_diff": request_diff, "tz_diff": tz_diff}

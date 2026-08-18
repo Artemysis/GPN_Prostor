@@ -1,0 +1,133 @@
+@startuml ПРОСТОР_2.0_UseCase
+title <b>ПРОСТОР 2.0</b> — Use Case диаграмма\nУмный конструктор ТЗ + ИИ-агент умного поиска
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam actorStyle awesome
+
+actor "Заказчик" as Customer
+actor "Администратор" as Admin
+Admin --|> Customer
+
+actor "ИИ-агент\n(DeepSeek LLM)" as AI
+actor "Векторный индекс\n(pgvector)" as VecDB
+actor "Файловое хранилище\n(MinIO)" as Storage
+actor "Фоновый исполнитель\n(Jobs)" as Jobs
+
+package "Аутентификация" {
+  usecase "Войти в систему\n(по имени, JWT)" as UC_Login
+}
+
+package "Заявки" {
+  usecase "Создать заявку" as UC_CreateReq
+  usecase "Управлять заявками\n(просмотр, редактирование, удаление)" as UC_ManageReq
+  usecase "Заполнить шапку заявки\n(Компания → Договор → Продукт)" as UC_Header
+  usecase "Отправить заявку" as UC_Submit
+}
+
+package "Конструктор ТЗ" {
+  usecase "Создать ТЗ из шаблона" as UC_CreateTz
+  usecase "Выбрать шаблон ТЗ\n(вручную / ИИ-рекомендация)" as UC_PickTpl
+  usecase "Предзаполнить ТЗ\nиз контекста чата" as UC_Prefill
+  usecase "Редактировать блоки и этапы ТЗ\n(с пересчётом полноты)" as UC_EditTz
+  usecase "ИИ-заполнение блоков ТЗ" as UC_FillAi
+}
+
+package "ИИ-консультант" {
+  usecase "Общаться с ИИ-чатом\n(SSE-стрим)" as UC_Chat
+  usecase "Применить предложения ИИ\n(черновик шапки, шаблон ТЗ)" as UC_Apply
+}
+
+package "Поиск и справочники" {
+  usecase "Семантический поиск\n(продукты, подрядчики, аналоги)" as UC_Search
+  usecase "Просматривать справочники\n(компании, договоры, продукты, РС)" as UC_Dirs
+}
+
+package "Анализ" {
+  usecase "Анализировать ТЗ\n(полнота, риски, рекомендации)" as UC_Analyze
+}
+
+package "Документы" {
+  usecase "Выгрузить ТЗ (DOCX/PDF)" as UC_Export
+  usecase "Сформировать аналитический\nотчёт ИИ" as UC_Report
+  usecase "Приложить файлы (КП, РС)" as UC_Attach
+  usecase "Скачать документ\n(presigned URL)" as UC_Download
+}
+
+package "Аналитика" {
+  usecase "Просматривать дашборды\n(ТЗ и поисковая активность)" as UC_Dash
+}
+
+package "Администрирование" {
+  usecase "Загрузить справочники (xlsx,\n5 видов ингеста)" as UC_Ingest
+  usecase "Загрузить шаблон ТЗ (docx)" as UC_TplUpload
+  usecase "Пересобрать векторный индекс" as UC_Rebuild
+}
+
+package "Сервисные" {
+  usecase "Выполнять фоновую задачу\n(fill-ai, analyze, export, rebuild)" as UC_Job
+}
+
+Customer --> UC_Login
+Customer --> UC_CreateReq
+Customer --> UC_ManageReq
+Customer --> UC_Submit
+Customer --> UC_CreateTz
+Customer --> UC_EditTz
+Customer --> UC_FillAi
+Customer --> UC_Chat
+Customer --> UC_Analyze
+Customer --> UC_Export
+Customer --> UC_Attach
+Customer --> UC_Download
+Customer --> UC_Search
+Customer --> UC_Dirs
+Customer --> UC_Dash
+
+Admin --> UC_Ingest
+Admin --> UC_TplUpload
+Admin --> UC_Rebuild
+
+UC_CreateReq ..> UC_Header : <<include>>
+UC_CreateReq ..> UC_CreateTz : <<include>>
+UC_CreateTz ..> UC_PickTpl : <<include>>
+UC_CreateTz ..> UC_Prefill : <<extend>>
+UC_Chat ..> UC_Search : <<include>>
+UC_Chat ..> UC_Apply : <<extend>>
+UC_Submit ..> UC_CreateTz : <<include>>
+UC_Export ..> UC_Report : <<extend>>
+UC_Ingest ..> UC_Rebuild : <<extend>>
+UC_FillAi ..> UC_Job : <<include>>
+UC_Analyze ..> UC_Job : <<include>>
+UC_Export ..> UC_Job : <<include>>
+UC_Rebuild ..> UC_Job : <<include>>
+
+UC_Chat --> AI
+UC_FillAi --> AI
+UC_Analyze --> AI
+UC_Report --> AI
+UC_PickTpl --> AI
+UC_Apply --> AI
+
+UC_Search --> VecDB
+UC_Rebuild --> VecDB
+
+UC_Export --> Storage
+UC_Attach --> Storage
+UC_TplUpload --> Storage
+UC_Download --> Storage
+
+UC_Job --> Jobs
+
+note bottom of UC_Apply
+  Бизнес-правило «ИИ — советник»:
+  ИИ только формирует предложения (actions),
+  применение — явное действие пользователя
+end note
+
+note bottom of UC_Submit
+  Статусная модель заявки:
+  draft → in_progress → ready → submitted
+end note
+@enduml

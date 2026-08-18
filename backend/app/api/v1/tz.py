@@ -81,7 +81,7 @@ async def _recalc_completeness(db: AsyncSession, tz: RequestTz, triggered_by: st
 
 @router.post("/requests/{request_id}/tz", response_model=TzOut, status_code=201)
 async def create_request_tz(request_id: uuid.UUID, body: TzCreate, db: AsyncSession = Depends(get_db)):
-    await _get_request(db, request_id)
+    request = await _get_request(db, request_id)
     existing_tz = (await db.execute(select(RequestTz).where(RequestTz.request_id == request_id))).scalar_one_or_none()
     if existing_tz is not None:
         raise ConflictError("ТЗ для заявки уже существует")
@@ -89,7 +89,27 @@ async def create_request_tz(request_id: uuid.UUID, body: TzCreate, db: AsyncSess
     if template is None:
         raise NotFoundError("Шаблон ТЗ не найден")
 
-    tz = await create_tz_from_template(db, request_id, template)
+    prefill = None
+    if body.prefill_from_chat:
+        from app.services.llm_client import get_llm_client
+        from app.services.tz_builder import generate_tz_prefill
+
+        request_context = {
+            "title": request.title,
+            "description": request.description,
+            "product_id": request.product_id,
+            "date_start": request.date_start.isoformat() if request.date_start else None,
+            "date_end": request.date_end.isoformat() if request.date_end else None,
+            "cost_total": float(request.cost_total) if request.cost_total is not None else None,
+        }
+        prefill, estimated_cost = await generate_tz_prefill(template, request_context, get_llm_client())
+        if estimated_cost and request.cost_total is None:
+            request.cost_total = estimated_cost
+            meta = dict(request.request_metadata or {})
+            meta.setdefault("filled_by", {})["cost_total"] = "ai"
+            request.request_metadata = meta
+
+    tz = await create_tz_from_template(db, request_id, template, prefill=prefill)
     tz = await _get_tz(db, request_id)
     return _tz_out(tz)
 

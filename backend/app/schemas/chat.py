@@ -55,3 +55,5 @@ class ChatAutofillResponse(BaseModel):
 
 class ChatApplyResponse(BaseModel):
     applied: list[AppliedField]
+    request_diff: dict[str, Any] = {}
+    tz_diff: dict[str, Any] = {}

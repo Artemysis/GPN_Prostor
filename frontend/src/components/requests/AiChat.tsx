@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Send, Sparkles } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { ChatAction } from '@/lib/api'
+import type { ApplyResult, ChatAction } from '@/lib/api'
 import { useChatStream } from '@/lib/hooks/useChatStream'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/controls'
@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 
 interface AiChatProps {
   requestId: string
-  onApplied?: () => void
+  onApplied?: (result: ApplyResult | null) => void
   onCreateTz?: (templateId: string) => void
   pendingQuestion?: { text: string; nonce: number } | null
   className?: string
@@ -41,10 +41,15 @@ export function AiChat({ requestId, onApplied, onCreateTz, pendingQuestion, clas
   }, [pendingQuestion?.nonce, pendingQuestion, send])
 
   const handleApply = (actions: ChatAction[]) => {
-    void applyActions(actions).then((applied) => {
-      if (applied.length > 0) {
-        toast(`Применено предложений: ${applied.length}`, 'success')
-        onApplied?.()
+    void applyActions(actions).then((result) => {
+      if (result && (result.applied.length > 0 || result.tz_diff?.tz_id)) {
+        toast(
+          result.tz_diff?.tz_id
+            ? `Применено предложений: ${result.applied.length}. ТЗ создано — черновик готов к проверке`
+            : `Применено предложений: ${result.applied.length}`,
+          'success',
+        )
+        onApplied?.(result)
       }
     })
   }

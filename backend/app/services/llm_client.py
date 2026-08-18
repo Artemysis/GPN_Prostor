@@ -41,14 +41,9 @@ class DeepSeekLLMClient:
         if tools:
             kwargs["tools"] = tools
         if json_schema:
-            kwargs["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": json_schema["name"],
-                    "schema": json_schema["schema"],
-                    "strict": True,
-                },
-            }
+            # DeepSeek не поддерживает json_schema — используем json_object,
+            # структуру передаём текстом в промпте (см. chat_json).
+            kwargs["response_format"] = {"type": "json_object"}
         return await self.client.chat.completions.create(**kwargs)
 
     async def chat_json(
@@ -60,11 +55,17 @@ class DeepSeekLLMClient:
     ) -> dict[str, Any]:
         if not self.enabled:
             return {}
+        schema_text = json.dumps(json_schema["schema"], ensure_ascii=False)
+        prompt = (
+            f"{user_prompt}\n\n"
+            "Ответ верни строго валидным JSON-объектом (без markdown, без пояснений) "
+            f"точно такой структуры:\n{schema_text}"
+        )
         try:
             response = await self.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": prompt},
                 ],
                 json_schema=json_schema,
                 model=model,
