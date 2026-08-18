@@ -35,13 +35,9 @@ function resolveValue(
 function ActionsPanel({
   actions,
   onApply,
-  onCreateTz,
-  creatingTz,
 }: {
   actions: ChatAction[]
   onApply: (actions: ChatAction[]) => void | Promise<void>
-  onCreateTz: (templateId: string) => void
-  creatingTz?: boolean
 }) {
   const setFields = actions.filter((a) => a.type === 'set_field')
   const templateAction = actions.find((a) => a.type === 'suggest_template')
@@ -140,48 +136,29 @@ function ActionsPanel({
                 Рекомендация шаблона ТЗ: <span className="text-brand-800">{template.name}</span>
               </p>
               <p className="text-xs text-slate-500">
-                Уверенность {Math.round(templateAction.confidence * 100)}% — создайте ТЗ, если согласны с рекомендацией
+                Уверенность {Math.round(templateAction.confidence * 100)}%
+                {setFields.length > 0
+                  ? ' — шаблон применится вместе с предложениями выше'
+                  : ' — примените рекомендацию, чтобы создать ТЗ с ИИ-черновиком'}
               </p>
-              {creatingTz && (
-                <div className="mt-2 w-56 space-y-1">
-                  <p className="text-[11px] font-medium text-brand-700">Создаём ТЗ с ИИ-предзаполнением…</p>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-brand-100">
-                    <div className="h-full w-1/3 animate-[progress-slide_1.4s_ease-in-out_infinite] rounded-full bg-brand-600" />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
-          <TemplateCreateButton templateId={template.id} onCreateTz={onCreateTz} creating={creatingTz} />
+          {setFields.length === 0 && (
+            <Button
+              size="sm"
+              disabled={templateAction.applied}
+              loading={applying}
+              onClick={() => {
+                setApplying(true)
+                Promise.resolve(onApply([templateAction])).finally(() => setApplying(false))
+              }}
+            >
+              {templateAction.applied ? 'Применено' : 'Применить'}
+            </Button>
+          )}
         </div>
       )}
     </div>
-  )
-}
-
-function TemplateCreateButton({
-  templateId,
-  onCreateTz,
-  creating,
-}: {
-  templateId: string
-  onCreateTz: (templateId: string) => void
-  creating?: boolean
-}) {
-  const [used, setUsed] = useState(false)
-  return (
-    <Button
-      size="sm"
-      variant={used ? 'secondary' : 'default'}
-      disabled={used}
-      loading={Boolean(creating) && !used}
-      onClick={() => {
-        onCreateTz(templateId)
-        setUsed(true)
-      }}
-    >
-      {used ? 'Создано' : 'Создать ТЗ с ИИ'}
-    </Button>
   )
 }
 
@@ -189,14 +166,10 @@ export function ChatMessageView({
   message,
   streaming,
   onApply,
-  onCreateTz,
-  creatingTz,
 }: {
   message: ChatMessageType
   streaming?: boolean
   onApply: (actions: ChatAction[]) => void | Promise<void>
-  onCreateTz: (templateId: string) => void
-  creatingTz?: boolean
 }) {
   const isUser = message.role === 'user'
 
@@ -280,7 +253,7 @@ export function ChatMessageView({
         )}
 
         {!isUser && message.actions && message.actions.length > 0 && !streaming && (
-          <ActionsPanel actions={message.actions} onApply={onApply} onCreateTz={onCreateTz} creatingTz={creatingTz} />
+          <ActionsPanel actions={message.actions} onApply={onApply} />
         )}
 
         {streaming && <p className="text-[11px] text-slate-400">ИИ печатает…</p>}

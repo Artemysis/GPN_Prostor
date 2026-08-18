@@ -37,6 +37,53 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
 )
 Textarea.displayName = 'Textarea'
 
+export const AutoTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number; maxRows?: number }
+>(({ className, minRows = 1, maxRows = 10, value, onChange, ...props }, ref) => {
+  const innerRef = React.useRef<HTMLTextAreaElement | null>(null)
+
+  const resize = React.useCallback(() => {
+    const el = innerRef.current
+    if (!el) return
+    const styles = window.getComputedStyle(el)
+    const lineHeight = parseFloat(styles.lineHeight) || 20
+    const extra =
+      parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom) +
+      parseFloat(styles.borderTopWidth) + parseFloat(styles.borderBottomWidth)
+    const maxH = maxRows * lineHeight + extra
+    const minH = minRows * lineHeight + extra
+    el.style.height = 'auto'
+    const next = Math.max(minH, Math.min(el.scrollHeight, maxH))
+    el.style.height = `${next}px`
+    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden'
+  }, [minRows, maxRows])
+
+  React.useEffect(resize, [value, resize])
+
+  return (
+    <textarea
+      ref={(node) => {
+        innerRef.current = node
+        if (typeof ref === 'function') ref(node)
+        else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = node
+      }}
+      value={value}
+      onChange={(e) => {
+        onChange?.(e)
+        resize()
+      }}
+      rows={minRows}
+      className={cn(
+        'flex w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 focus-visible:border-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50',
+        className,
+      )}
+      {...props}
+    />
+  )
+})
+AutoTextarea.displayName = 'AutoTextarea'
+
 export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   ({ className, children, ...props }, ref) => (
     <div className="relative">
