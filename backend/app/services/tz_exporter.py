@@ -134,12 +134,15 @@ def export_key(request_id: uuid.UUID, document_id: uuid.UUID, ext: str = "docx")
     return f"exports/{request_id}/{document_id}.{ext}"
 
 
+_EXPORT_CONTENT_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+}
+
+
 def upload_export(minio: MinioService, request_id: uuid.UUID, document_id: uuid.UUID, data: bytes, ext: str = "docx") -> tuple[str, str]:
     key = export_key(request_id, document_id, ext)
-    content_type = (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if ext == "docx"
-        else "application/pdf"
-    )
+    content_type = _EXPORT_CONTENT_TYPES.get(ext, "application/octet-stream")
     minio.upload_bytes(settings.minio_bucket_exports, key, data, content_type)
     return settings.minio_bucket_exports, key

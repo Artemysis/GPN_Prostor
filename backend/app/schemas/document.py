@@ -24,6 +24,7 @@ class RequestDocumentDetailOut(RequestDocumentOut):
 class ExportRequest(BaseModel):
     formats: list[str] = ["docx"]
     include_analytical_report: bool = True
+    include_package: bool = True
 
 
 class AnalyticalReportRequest(BaseModel):

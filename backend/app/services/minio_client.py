@@ -51,6 +51,13 @@ class MinioService:
     def delete(self, bucket: str, key: str) -> None:
         self.client.remove_object(bucket, key)
 
+    def object_exists(self, bucket: str, key: str) -> bool:
+        try:
+            self.client.stat_object(bucket, key)
+            return True
+        except S3Error:
+            return False
+
 
 @lru_cache
 def get_minio_service() -> MinioService:

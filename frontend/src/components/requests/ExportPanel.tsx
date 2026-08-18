@@ -13,8 +13,11 @@ const kindLabels: Record<string, string> = {
   tz_final: 'Итоговое ТЗ',
   analytical_report: 'Аналит. отчет ИИ',
   attachment: 'Приложение',
-  kp: 'КП',
-  rs: 'РС',
+  naryad_zakaz: 'Наряд-заказ',
+  tz_appendix1: 'Приложение 1. ТЗ',
+  tz_form_2_1: 'Приложение № 2.1. Форма ТЗ',
+  kp: 'Приложение 2. КП',
+  rs: 'Приложение 3. РС',
 }
 
 export function ExportPanel({ requestId }: { requestId: string }) {
@@ -22,6 +25,7 @@ export function ExportPanel({ requestId }: { requestId: string }) {
   const [docx, setDocx] = useState(true)
   const [pdf, setPdf] = useState(false)
   const [includeReport, setIncludeReport] = useState(true)
+  const [includePackage, setIncludePackage] = useState(true)
   const [jobId, setJobId] = useState<string | null>(null)
   const toast = useUiStore((s) => s.toast)
 
@@ -47,7 +51,7 @@ export function ExportPanel({ requestId }: { requestId: string }) {
       toast('Выберите хотя бы один формат', 'error')
       return
     }
-    void api.startExport(requestId, formats, includeReport).then((job) => setJobId(job.id))
+    void api.startExport(requestId, formats, includeReport, includePackage).then((job) => setJobId(job.id))
   }
 
   const upload = async (file: File | undefined) => {
@@ -65,13 +69,19 @@ export function ExportPanel({ requestId }: { requestId: string }) {
           <Checkbox label="DOCX" checked={docx} onChange={(e) => setDocx(e.target.checked)} />
           <Checkbox label="PDF" checked={pdf} onChange={(e) => setPdf(e.target.checked)} />
           <Checkbox label="Аналитический отчет ИИ" checked={includeReport} onChange={(e) => setIncludeReport(e.target.checked)} />
+          <Checkbox
+            label="Комплект документов (наряд-заказ, приложения, КП, РС)"
+            checked={includePackage}
+            onChange={(e) => setIncludePackage(e.target.checked)}
+          />
           <Button className="ml-auto" size="sm" onClick={run} loading={Boolean(jobId)}>
             <FileDown className="h-3.5 w-3.5" />
             Выгрузить
           </Button>
         </div>
         <p className="mt-2 text-[11px] text-slate-400">
-          В выгрузку входят итоговый документ ТЗ, приложения (КП, РС) и аналитический отчет, созданный ИИ
+          В выгрузку входят итоговый документ ТЗ, аналитический отчет ИИ и, при выборе комплекта, — наряд-заказ,
+          приложения 1 и № 2.1 к ТЗ, коммерческое предложение (КП) и расчет стоимости (РС)
         </p>
       </div>
 

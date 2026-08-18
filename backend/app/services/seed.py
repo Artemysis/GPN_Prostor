@@ -141,6 +141,54 @@ async def seed_tz_templates(db: AsyncSession) -> None:
     logger.info("Сидирование шаблонов ТЗ завершено")
 
 
+PACKAGE_TEMPLATE_FILES = [
+    ("Наряд-заказ_ПЗ.docx", "package/naryad_zakaz.docx"),
+    ("Приложение 1. ТЗ.docx", "package/tz_appendix1.docx"),
+    ("Приложение № 2.1 Форма Технического задания.docx", "package/tz_form_2_1.docx"),
+    ("Приложение 2. КП.xlsx", "package/kp.xlsx"),
+    ("Приложение 3. РС.xlsx", "package/rs.xlsx"),
+]
+
+_PACKAGE_CONTENT_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+async def seed_package_templates() -> None:
+    """Загружает исходные файлы комплекта документов (seed/package) в MinIO,
+    если они там ещё отсутствуют. Идемпотентно — проверяет каждый файл отдельно."""
+    package_dir = Path(settings.seed_package_dir)
+    if not package_dir.exists():
+        logger.warning(f"Каталог {package_dir} не найден, пропускаю сидирование комплекта документов")
+        return
+
+    try:
+        minio = get_minio_service()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"MinIO недоступен, пропускаю сидирование комплекта документов: {exc}")
+        return
+
+    for filename, minio_key in PACKAGE_TEMPLATE_FILES:
+        path = package_dir / filename
+        if not path.exists():
+            logger.warning(f"Файл шаблона {filename} не найден в {package_dir}")
+            continue
+        try:
+            if minio.object_exists(settings.minio_bucket_templates, minio_key):
+                continue
+            ext = minio_key.rsplit(".", 1)[-1]
+            minio.upload_bytes(
+                settings.minio_bucket_templates,
+                minio_key,
+                path.read_bytes(),
+                _PACKAGE_CONTENT_TYPES.get(ext, "application/octet-stream"),
+            )
+            logger.info(f"Загружен шаблон комплекта документов {filename} -> {minio_key}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"MinIO недоступен при сидировании шаблона {filename}: {exc}")
+
+
 async def run_seed(db: AsyncSession) -> None:
     try:
         get_minio_service().ensure_buckets()
@@ -148,3 +196,4 @@ async def run_seed(db: AsyncSession) -> None:
         logger.warning(f"MinIO недоступен при старте: {exc}")
     await seed_xlsx(db)
     await seed_tz_templates(db)
+    await seed_package_templates()

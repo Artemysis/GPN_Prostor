@@ -9,6 +9,10 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.core.deps import get_db
 from app.db.models import (
+    Company,
+    Contract,
+    Product,
+    ProductRate,
     Request,
     RequestDocument,
     RequestTz,
@@ -24,6 +28,14 @@ from app.schemas.document import (
 from app.schemas.job import JobCreatedOut
 from app.services.jobs import create_job, run_job
 from app.services.minio_client import get_minio_service
+from app.services.package_exporter import (
+    PACKAGE_DOCS,
+    render_kp_xlsx,
+    render_naryad_zakaz_docx,
+    render_rs_xlsx,
+    render_tz_appendix1_docx,
+    render_tz_form_2_1_docx,
+)
 from app.services.tz_exporter import (
     generate_analytical_report_text,
     render_report_docx,
@@ -45,7 +57,7 @@ async def _get_request(db: AsyncSession, request_id: uuid.UUID) -> Request:
     return request
 
 
-async def _export_task(request_id: uuid.UUID, formats: list[str], include_report: bool):
+async def _export_task(request_id: uuid.UUID, formats: list[str], include_report: bool, include_package: bool):
     async def task(db: AsyncSession) -> dict:
         request = await _get_request(db, request_id)
         stmt = select(RequestTz).where(RequestTz.request_id == request_id).options(selectinload(RequestTz.stages))
@@ -118,6 +130,42 @@ async def _export_task(request_id: uuid.UUID, formats: list[str], include_report
             )
             documents.append(str(doc_id))
 
+        if include_package:
+            company = await db.get(Company, request.company_id) if request.company_id else None
+            contract = await db.get(Contract, request.contract_id) if request.contract_id else None
+            product = await db.get(Product, request.product_id) if request.product_id else None
+            rates: list[ProductRate] = []
+            if request.product_id:
+                rates = (
+                    await db.execute(select(ProductRate).where(ProductRate.product_id == request.product_id))
+                ).scalars().all()
+
+            package_data = {
+                "naryad_zakaz": render_naryad_zakaz_docx(request, company, contract, product, tz),
+                "tz_appendix1": render_tz_appendix1_docx(request, template, tz, stages),
+                "tz_form_2_1": render_tz_form_2_1_docx(request, template, tz, stages),
+                "kp": render_kp_xlsx(request, stages, company),
+                "rs": render_rs_xlsx(request, stages, rates),
+            }
+            for kind, filename_prefix, mime_type, ext in PACKAGE_DOCS:
+                data = package_data[kind]
+                doc_id = uuid.uuid4()
+                bucket, key = upload_export(minio, request_id, doc_id, data, ext)
+                db.add(
+                    RequestDocument(
+                        id=doc_id,
+                        request_id=request_id,
+                        kind=kind,
+                        filename=f"{filename_prefix}_{request.number or request_id}.{ext}",
+                        mime_type=mime_type,
+                        minio_bucket=bucket,
+                        minio_key=key,
+                        size_bytes=len(data),
+                        generated_by_ai=False,
+                    )
+                )
+                documents.append(str(doc_id))
+
         await db.commit()
         return {"documents": documents}
 
@@ -128,7 +176,7 @@ async def _export_task(request_id: uuid.UUID, formats: list[str], include_report
 async def export_request(request_id: uuid.UUID, body: ExportRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     await _get_request(db, request_id)
     job = await create_job(db, "export", {"request_id": str(request_id), "formats": body.formats})
-    task = await _export_task(request_id, body.formats, body.include_analytical_report)
+    task = await _export_task(request_id, body.formats, body.include_analytical_report, body.include_package)
     background_tasks.add_task(run_job, job.id, task)
     return JobCreatedOut(job_id=job.id)
 
@@ -251,7 +299,7 @@ async def upload_attachment(
 
 @router.get("/requests/{request_id}/attachments", response_model=list[RequestDocumentOut])
 async def list_attachments(request_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    stmt = select(RequestDocument).where(RequestDocument.request_id == request_id, RequestDocument.kind != "tz_final")
+    stmt = select(RequestDocument).where(RequestDocument.request_id == request_id, RequestDocument.kind == "attachment")
     return (await db.execute(stmt)).scalars().all()
 
 

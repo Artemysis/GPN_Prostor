@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     seed_on_start: bool = True
     seed_xlsx_dir: str = "seed/xlsx"
     seed_tz_templates_dir: str = "seed/tz_templates"
+    seed_package_dir: str = "seed/package"
 
     @property
     def cors_origins_list(self) -> list[str]:

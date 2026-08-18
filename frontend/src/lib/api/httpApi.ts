@@ -254,9 +254,18 @@ export async function applyActions(sessionId: string, actions: ChatAction[]): Pr
 
 // --- Документы / выгрузка ----------------------------------------------------
 
-export function startExport(requestId: string, formats: string[], includeAnalyticalReport: boolean): Promise<Job> {
+export function startExport(
+  requestId: string,
+  formats: string[],
+  includeAnalyticalReport: boolean,
+  includePackage = true,
+): Promise<Job> {
   return req<{ job_id: string }>(() =>
-    http.post(`/requests/${requestId}/export`, { formats, include_analytical_report: includeAnalyticalReport }),
+    http.post(`/requests/${requestId}/export`, {
+      formats,
+      include_analytical_report: includeAnalyticalReport,
+      include_package: includePackage,
+    }),
   ).then((d) => ({ id: d.job_id, type: 'export', status: 'pending', result: null, error: null }))
 }
 export function listDocuments(requestId: string): Promise<DocumentRecord[]> {
