@@ -48,12 +48,25 @@ uv run alembic revision -m "название" --autogenerate   # для новы
 
 ## Тесты
 
-Тесты гоняются на реальном PostgreSQL + pgvector (см. `tests/conftest.py`):
+Тесты гоняются на реальном PostgreSQL + pgvector (см. `tests/conftest.py`) и используют
+**отдельную БД `prostor_test`** — не dev-базу `prostor` (создаётся автоматически на том же
+Postgres-сервере, см. `docker/init-test-db.sql`). Фикстуры делают `create_all`/`drop_all`
+перед/после прогона, так что на dev-данные это никогда не влияет:
 
 ```bash
 docker compose up -d postgres
 uv run pytest
 ```
+
+Если `prostor_test` ещё не создана (например, volume `pgdata` был инициализирован до появления
+`docker/init-test-db.sql`), создайте её вручную один раз:
+
+```bash
+docker exec <контейнер_postgres> psql -U prostor -d postgres -c "CREATE DATABASE prostor_test OWNER prostor;"
+docker exec <контейнер_postgres> psql -U prostor -d prostor_test -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";"
+```
+
+Чтобы указать свою тестовую БД (например, в CI), задайте `TEST_DATABASE_URL`.
 
 ## Сидирование данных
 

@@ -101,16 +101,22 @@ function ActionsPanel({
               size="sm"
               disabled={chosen.length === 0}
               loading={applying}
-              onClick={() => {
+              onClick={async () => {
                 setApplying(true)
-                Promise.resolve(onApply(templateAction ? [...chosen, templateAction] : chosen)).finally(() =>
-                  setApplying(false),
-                )
+                try {
+                  await onApply(templateAction ? [...chosen, templateAction] : chosen)
+                } finally {
+                  setApplying(false)
+                }
               }}
             >
-              {templateAction
-                ? `Применить и создать ТЗ (${chosen.length})`
-                : `Применить выбранные (${chosen.length})`}
+              {applying
+                ? templateAction
+                  ? 'Применяем и создаём ТЗ…'
+                  : 'Применяем…'
+                : templateAction
+                  ? `Применить и создать ТЗ (${chosen.length})`
+                  : `Применить выбранные (${chosen.length})`}
             </Button>
           </div>
           {applying && (

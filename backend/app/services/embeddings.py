@@ -5,6 +5,7 @@ from typing import Protocol
 
 import numpy as np
 from loguru import logger
+from openai import AsyncOpenAI
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,33 @@ class EmbeddingsClient(Protocol):
 
     @property
     def dim(self) -> int: ...
+
+
+class APIEmbeddingsClient:
+    """Эмбеддинги через внешний OpenAI-совместимый /embeddings API.
+
+    Используется, когда EMBEDDINGS_PROVIDER != "local" — не тянет никаких
+    моделей локально, никакой загрузки с HuggingFace не происходит.
+    При ошибке запроса (нет ключа, сеть недоступна и т.п.) — детерминированный
+    hash-фолбэк, как и у LocalEmbeddingsClient.
+    """
+
+    def __init__(self, base_url: str, api_key: str, model: str, dim: int):
+        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key or "sk-placeholder")
+        self.model = model
+        self._dim = dim
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        try:
+            response = await self.client.embeddings.create(model=self.model, input=list(texts))
+            return [item.embedding for item in response.data]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Не удалось получить эмбеддинги через API ({exc}), использую hash-фолбэк")
+            return [_hash_embedding(text, self._dim) for text in texts]
+
+    @property
+    def dim(self) -> int:
+        return self._dim
 
 
 class LocalEmbeddingsClient:
@@ -87,8 +115,23 @@ def _hash_embedding(text: str, dim: int) -> list[float]:
 
 
 @lru_cache
-def get_embeddings_client() -> LocalEmbeddingsClient:
-    return LocalEmbeddingsClient(settings.embeddings_model)
+def get_embeddings_client() -> EmbeddingsClient:
+    if settings.embeddings_provider == "local":
+        return LocalEmbeddingsClient(settings.embeddings_model)
+    return APIEmbeddingsClient(
+        base_url=settings.embeddings_api_base,
+        api_key=settings.embeddings_api_key,
+        model=settings.embeddings_model,
+        dim=settings.llm_embedding_dim,
+    )
+
+
+def _with_e5_prefix(prefix: str, text: str) -> str:
+    # Префиксы "query: "/"passage: " нужны только модели e5 (local-провайдер);
+    # для внешних API-моделей (text-embedding-3-small и т.п.) они не нужны.
+    if settings.embeddings_provider != "local":
+        return text
+    return f"{prefix}: {text}"
 
 
 async def upsert_embedding(
@@ -99,7 +142,7 @@ async def upsert_embedding(
     metadata: dict | None = None,
 ) -> None:
     client = get_embeddings_client()
-    vector = (await client.embed([f"passage: {content}"]))[0]
+    vector = (await client.embed([_with_e5_prefix("passage", content)]))[0]
     await db.execute(
         delete(Embedding).where(Embedding.entity_type == entity_type, Embedding.entity_id == entity_id)
     )
@@ -117,7 +160,7 @@ async def upsert_embedding(
 
 async def embed_query(text: str) -> list[float]:
     client = get_embeddings_client()
-    return (await client.embed([f"query: {text}"]))[0]
+    return (await client.embed([_with_e5_prefix("query", text)]))[0]
 
 
 async def search_embeddings(
