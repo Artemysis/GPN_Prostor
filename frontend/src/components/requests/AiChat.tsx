@@ -13,20 +13,16 @@ import { cn } from '@/lib/utils'
 interface AiChatProps {
   requestId: string
   onApplied?: (result: ApplyResult | null) => void
-  onCreateTz?: (templateId: string) => void
   onTemplateRecommended?: (templateId: string | null) => void
   pendingQuestion?: { text: string; nonce: number } | null
-  creatingTz?: boolean
   className?: string
 }
 
 export function AiChat({
   requestId,
   onApplied,
-  onCreateTz,
   onTemplateRecommended,
   pendingQuestion,
-  creatingTz,
   className,
 }: AiChatProps) {
   const { data: session } = useQuery({
@@ -105,8 +101,6 @@ export function AiChat({
             message={m}
             streaming={streaming && i === messages.length - 1 && m.role === 'assistant'}
             onApply={handleApply}
-            onCreateTz={(templateId) => onCreateTz?.(templateId)}
-            creatingTz={creatingTz}
           />
         ))}
       </div>

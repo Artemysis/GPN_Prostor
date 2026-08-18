@@ -6,7 +6,7 @@ import type { TzBlock, TzTemplateBlockSchema } from '@/lib/api'
 import { useJobPolling } from '@/lib/hooks/useJobPolling'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input, Label, ListInput, Textarea } from '@/components/ui/controls'
+import { Input, Label, ListInput, AutoTextarea } from '@/components/ui/controls'
 import { Progress } from '@/components/ui/misc'
 import { FilledByBadge } from '@/components/shared/badges'
 import { useUiStore } from '@/lib/stores/uiStore'
@@ -152,6 +152,14 @@ export function TzBlockCard({
                 onChange={(values) => setField(f.key, values)}
                 placeholder="Добавьте пункт и нажмите Enter"
               />
+            ) : f.type === 'textarea' ? (
+              <AutoTextarea
+                id={`blk_${block.block_code}_${f.key}`}
+                minRows={2}
+                placeholder={f.placeholder}
+                value={(field(f.key) as string) ?? ''}
+                onChange={(e) => setField(f.key, e.target.value)}
+              />
             ) : f.type === 'date' ? (
               <Input
                 id={`blk_${block.block_code}_${f.key}`}
@@ -159,17 +167,10 @@ export function TzBlockCard({
                 value={(field(f.key) as string) ?? ''}
                 onChange={(e) => setField(f.key, e.target.value)}
               />
-            ) : f.type === 'textarea' ? (
-              <Textarea
-                id={`blk_${block.block_code}_${f.key}`}
-                rows={2}
-                placeholder={f.placeholder}
-                value={(field(f.key) as string) ?? ''}
-                onChange={(e) => setField(f.key, e.target.value)}
-              />
             ) : (
-              <Input
+              <AutoTextarea
                 id={`blk_${block.block_code}_${f.key}`}
+                minRows={1}
                 placeholder={f.placeholder}
                 value={(field(f.key) as string) ?? ''}
                 onChange={(e) => setField(f.key, e.target.value)}

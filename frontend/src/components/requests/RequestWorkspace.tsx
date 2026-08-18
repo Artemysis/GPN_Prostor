@@ -201,9 +201,7 @@ export function RequestWorkspace({ requestId, onTzCreated }: { requestId: string
                 className="h-full"
                 requestId={requestId}
                 onApplied={invalidate}
-                onCreateTz={(templateId) => createTz(templateId, true)}
                 pendingQuestion={pendingQuestion}
-                creatingTz={creatingTz}
               />
             )}
             {tab === 'analysis' && <TzAnalysisPanel requestId={requestId} onAskAi={askAi} />}
