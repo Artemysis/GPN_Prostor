@@ -1,5 +1,6 @@
 import { setupServer } from 'msw/node'
-import type { HttpHandler } from 'msw'
+import { catalogHandlers } from './handlers'
 
-/** Общий MSW-сервер для всех тестов. Хендлеры регистрируются через server.use(). */
-export const server = setupServer(...([] as HttpHandler[]))
+/** Общий MSW-сервер: базовые хендлеры каталога + серверные (server.use) в тестах.
+ *  resetHandlers() в afterEach возвращает именно этот набор. */
+export const server = setupServer(...catalogHandlers)
