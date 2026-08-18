@@ -53,12 +53,15 @@ export function AiChat({
 
   useEffect(() => {
     if (pendingQuestion && pendingQuestion.nonce > 0) {
-      void send(pendingQuestion.text)
+      send(pendingQuestion.text).catch((error) =>
+        toast(error instanceof Error ? error.message : 'Не удалось отправить сообщение', 'error'),
+      )
     }
-  }, [pendingQuestion?.nonce, pendingQuestion, send])
+  }, [pendingQuestion?.nonce, pendingQuestion, send, toast])
 
-  const handleApply = (actions: ChatAction[]): Promise<void> =>
-    applyActions(actions).then((result) => {
+  const handleApply = async (actions: ChatAction[]) => {
+    try {
+      const result = await applyActions(actions)
       if (result && (result.applied.length > 0 || result.tz_diff?.tz_id)) {
         toast(
           result.tz_diff?.tz_id
@@ -67,12 +70,17 @@ export function AiChat({
           'success',
         )
         onApplied?.(result)
+      } else {
+        toast('Не удалось применить предложения', 'error')
       }
-    })
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Не удалось применить предложения', 'error')
+    }
+  }
 
   const submit = () => {
     if (!input.trim() || streaming) return
-    void send(input)
+    send(input).catch((error) => toast(error instanceof Error ? error.message : 'Не удалось отправить сообщение', 'error'))
     setInput('')
   }
 
