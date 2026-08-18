@@ -14,11 +14,21 @@ interface AiChatProps {
   requestId: string
   onApplied?: (result: ApplyResult | null) => void
   onCreateTz?: (templateId: string) => void
+  onTemplateRecommended?: (templateId: string | null) => void
   pendingQuestion?: { text: string; nonce: number } | null
+  creatingTz?: boolean
   className?: string
 }
 
-export function AiChat({ requestId, onApplied, onCreateTz, pendingQuestion, className }: AiChatProps) {
+export function AiChat({
+  requestId,
+  onApplied,
+  onCreateTz,
+  onTemplateRecommended,
+  pendingQuestion,
+  creatingTz,
+  className,
+}: AiChatProps) {
   const { data: session } = useQuery({
     queryKey: ['chatSession', requestId],
     queryFn: () => api.createChatSession(requestId),
@@ -34,14 +44,25 @@ export function AiChat({ requestId, onApplied, onCreateTz, pendingQuestion, clas
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
+  // Поднимаем наверх последнюю рекомендацию шаблона ТЗ от ИИ (для индикации в списке шаблонов)
+  useEffect(() => {
+    if (!onTemplateRecommended) return
+    let found: string | null = null
+    for (const m of messages) {
+      const rec = m.actions?.find((a) => a.type === 'suggest_template' && a.template_id)
+      if (rec?.template_id) found = rec.template_id
+    }
+    onTemplateRecommended(found)
+  }, [messages, onTemplateRecommended])
+
   useEffect(() => {
     if (pendingQuestion && pendingQuestion.nonce > 0) {
       void send(pendingQuestion.text)
     }
   }, [pendingQuestion?.nonce, pendingQuestion, send])
 
-  const handleApply = (actions: ChatAction[]) => {
-    void applyActions(actions).then((result) => {
+  const handleApply = (actions: ChatAction[]): Promise<void> =>
+    applyActions(actions).then((result) => {
       if (result && (result.applied.length > 0 || result.tz_diff?.tz_id)) {
         toast(
           result.tz_diff?.tz_id
@@ -52,7 +73,6 @@ export function AiChat({ requestId, onApplied, onCreateTz, pendingQuestion, clas
         onApplied?.(result)
       }
     })
-  }
 
   const submit = () => {
     if (!input.trim() || streaming) return
@@ -76,7 +96,7 @@ export function AiChat({ requestId, onApplied, onCreateTz, pendingQuestion, clas
         {messages.length === 0 && (
           <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/50 p-4 text-sm text-brand-900/80">
             Опишите задачу — например: <span className="font-medium">«Нужно оценить запасы по объекту и построить 3D-геомодель»</span>.
-            ИИ подберет продукты, подрядчиков и порекомендует шаблон ТЗ. Можно заполнять форму и без чата.
+            ИИ подберет продукты, исполнителей и порекомендует шаблон ТЗ. Можно заполнять форму и без чата.
           </div>
         )}
         {messages.map((m, i) => (
@@ -86,6 +106,7 @@ export function AiChat({ requestId, onApplied, onCreateTz, pendingQuestion, clas
             streaming={streaming && i === messages.length - 1 && m.role === 'assistant'}
             onApply={handleApply}
             onCreateTz={(templateId) => onCreateTz?.(templateId)}
+            creatingTz={creatingTz}
           />
         ))}
       </div>

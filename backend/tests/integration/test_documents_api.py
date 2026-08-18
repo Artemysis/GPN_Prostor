@@ -70,7 +70,7 @@ class TestDocumentMetadata:
         assert uploaded["id"] in ids
         assert all(d["kind"] != "tz_final" for d in response.json())
 
-    async def test_document_detail_contains_presigned_url(self, client, existing_request, mock_minio):
+    async def test_document_detail_contains_proxy_url(self, client, existing_request, mock_minio):
         # Arrange
         uploaded = (
             await client.post(
@@ -86,16 +86,18 @@ class TestDocumentMetadata:
         # Assert
         assert response.status_code == 200
         detail = response.json()
-        assert detail["presigned_url"].startswith("http://minio.test/")
+        # Ссылка через API-прокси: presigned-URL MinIO неразрешим из браузера
+        assert detail["presigned_url"] == f"/api/v1/documents/{uploaded['id']}/download"
         assert detail["expires_in"] == 900
 
-    async def test_download_redirects_to_presigned_url(self, client, existing_request, mock_minio):
+    async def test_download_streams_file_content(self, client, existing_request, mock_minio):
         # Arrange
+        content = b"%PDF-1.4 streamed through backend"
         uploaded = (
             await client.post(
                 f"/requests/{existing_request['id']}/attachments",
                 data={"kind": "attachment"},
-                files={"file": ("c.pdf", io.BytesIO(b"c"), "application/pdf")},
+                files={"file": ("c.pdf", io.BytesIO(content), "application/pdf")},
             )
         ).json()
 
@@ -103,8 +105,9 @@ class TestDocumentMetadata:
         response = await client.get(f"/documents/{uploaded['id']}/download")
 
         # Assert
-        assert response.status_code == 302
-        assert response.headers["location"].startswith("http://minio.test/")
+        assert response.status_code == 200
+        assert response.content == content  # файл отдаётся через бэкенд, а не redirect
+        assert "attachment" in response.headers["content-disposition"]
 
 
 class TestDeleteAttachment:

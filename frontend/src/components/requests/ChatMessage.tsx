@@ -9,7 +9,7 @@ import { Stars } from '@/components/ui/misc'
 import { cn } from '@/lib/utils'
 
 const fieldLabels: Record<string, string> = {
-  company_id: 'Подрядчик',
+  company_id: 'Исполнитель',
   contract_id: 'Договор',
   product_id: 'Продукт',
   cost_total: 'Стоимость, ₽',
@@ -36,16 +36,19 @@ function ActionsPanel({
   actions,
   onApply,
   onCreateTz,
+  creatingTz,
 }: {
   actions: ChatAction[]
-  onApply: (selected: ChatAction[]) => void
+  onApply: (actions: ChatAction[]) => void | Promise<void>
   onCreateTz: (templateId: string) => void
+  creatingTz?: boolean
 }) {
   const setFields = actions.filter((a) => a.type === 'set_field')
   const templateAction = actions.find((a) => a.type === 'suggest_template')
   const [selected, setSelected] = useState<Record<number, boolean>>(
     Object.fromEntries(setFields.map((a, i) => [i, !a.applied])),
   )
+  const [applying, setApplying] = useState(false)
   const chosen = setFields.filter((_, i) => selected[i])
   const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: () => api.listCompanies(), staleTime: Infinity })
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => api.listProducts(), staleTime: Infinity })
@@ -98,12 +101,33 @@ function ActionsPanel({
           </div>
           <div className="mt-2.5 flex items-center justify-between">
             <p className="text-[11px] text-brand-700/70">Ничего не применяется без вашего подтверждения</p>
-            <Button size="sm" disabled={chosen.length === 0} onClick={() => onApply(templateAction ? [...chosen, templateAction] : chosen)}>
+            <Button
+              size="sm"
+              disabled={chosen.length === 0}
+              loading={applying}
+              onClick={() => {
+                setApplying(true)
+                Promise.resolve(onApply(templateAction ? [...chosen, templateAction] : chosen)).finally(() =>
+                  setApplying(false),
+                )
+              }}
+            >
               {templateAction
                 ? `Применить и создать ТЗ (${chosen.length})`
                 : `Применить выбранные (${chosen.length})`}
             </Button>
           </div>
+          {applying && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-brand-700">
+                <Sparkles className="h-3 w-3 animate-pulse" />
+                {templateAction ? 'Применяем предложения и создаём ТЗ с ИИ-черновиком…' : 'Применяем предложения…'}
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-brand-100">
+                <div className="h-full w-1/3 animate-[progress-slide_1.4s_ease-in-out_infinite] rounded-full bg-brand-600" />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -118,28 +142,45 @@ function ActionsPanel({
               <p className="text-xs text-slate-500">
                 Уверенность {Math.round(templateAction.confidence * 100)}% — создайте ТЗ, если согласны с рекомендацией
               </p>
+              {creatingTz && (
+                <div className="mt-2 w-56 space-y-1">
+                  <p className="text-[11px] font-medium text-brand-700">Создаём ТЗ с ИИ-предзаполнением…</p>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-brand-100">
+                    <div className="h-full w-1/3 animate-[progress-slide_1.4s_ease-in-out_infinite] rounded-full bg-brand-600" />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-          <TemplateCreateButton templateId={template.id} onCreateTz={onCreateTz} />
+          <TemplateCreateButton templateId={template.id} onCreateTz={onCreateTz} creating={creatingTz} />
         </div>
       )}
     </div>
   )
 }
 
-function TemplateCreateButton({ templateId, onCreateTz }: { templateId: string; onCreateTz: (templateId: string) => void }) {
+function TemplateCreateButton({
+  templateId,
+  onCreateTz,
+  creating,
+}: {
+  templateId: string
+  onCreateTz: (templateId: string) => void
+  creating?: boolean
+}) {
   const [used, setUsed] = useState(false)
   return (
     <Button
       size="sm"
       variant={used ? 'secondary' : 'default'}
       disabled={used}
+      loading={Boolean(creating) && !used}
       onClick={() => {
         onCreateTz(templateId)
         setUsed(true)
       }}
     >
-      {used ? 'Создано' : 'Создать ТЗ'}
+      {used ? 'Создано' : 'Создать ТЗ с ИИ'}
     </Button>
   )
 }
@@ -149,11 +190,13 @@ export function ChatMessageView({
   streaming,
   onApply,
   onCreateTz,
+  creatingTz,
 }: {
   message: ChatMessageType
   streaming?: boolean
-  onApply: (actions: ChatAction[]) => void
+  onApply: (actions: ChatAction[]) => void | Promise<void>
   onCreateTz: (templateId: string) => void
+  creatingTz?: boolean
 }) {
   const isUser = message.role === 'user'
 
@@ -202,7 +245,7 @@ export function ChatMessageView({
               <div className="rounded-xl border border-slate-200 bg-white p-2.5">
                 <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   <Building2 className="h-3.5 w-3.5" />
-                  Подрядчики
+                  Исполнители
                 </p>
                 <div className="space-y-1.5">
                   {message.suggestions.contractors.map((c) => (
@@ -237,7 +280,7 @@ export function ChatMessageView({
         )}
 
         {!isUser && message.actions && message.actions.length > 0 && !streaming && (
-          <ActionsPanel actions={message.actions} onApply={onApply} onCreateTz={onCreateTz} />
+          <ActionsPanel actions={message.actions} onApply={onApply} onCreateTz={onCreateTz} creatingTz={creatingTz} />
         )}
 
         {streaming && <p className="text-[11px] text-slate-400">ИИ печатает…</p>}

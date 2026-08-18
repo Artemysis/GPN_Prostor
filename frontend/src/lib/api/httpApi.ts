@@ -126,7 +126,8 @@ export function submitRequest(id: string): Promise<RequestRecord> {
 
 export async function createTz(requestId: string, templateId: string, prefill = false): Promise<RequestTz> {
   try {
-    return await req(() => http.post(`/requests/${requestId}/tz`, { template_id: templateId, prefill_from_chat: prefill }))
+    // ИИ-предзаполнение может занять больше 15 секунд — увеличиваем таймаут
+    return await req(() => http.post(`/requests/${requestId}/tz`, { template_id: templateId, prefill_from_chat: prefill }, { timeout: 300000 }))
   } catch (error) {
     // ТЗ уже создано (409) — возвращаем существующее, чтобы вызов был идемпотентным
     const existing = await getTz(requestId)
@@ -249,7 +250,10 @@ export async function streamChat(sessionId: string, content: string, onEvent: (e
 }
 
 export async function applyActions(sessionId: string, actions: ChatAction[]): Promise<ApplyResult> {
-  return req<ApplyResult>(() => http.post(`/chat/sessions/${sessionId}/apply`, { actions }))
+  // «Применить и создать ТЗ» включает генерацию ИИ-черновика — долго, увеличиваем таймаут
+  return req<ApplyResult>(() =>
+    http.post(`/chat/sessions/${sessionId}/apply`, { actions }, { timeout: 300000 }),
+  )
 }
 
 // --- Документы / выгрузка ----------------------------------------------------
