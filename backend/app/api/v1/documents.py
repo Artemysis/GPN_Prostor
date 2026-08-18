@@ -1,7 +1,9 @@
+import asyncio
+import urllib.parse
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -255,7 +257,9 @@ async def _get_document(db: AsyncSession, doc_id: uuid.UUID) -> RequestDocument:
 @router.get("/documents/{doc_id}", response_model=RequestDocumentDetailOut)
 async def get_document(doc_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     doc = await _get_document(db, doc_id)
-    url = get_minio_service().presigned_url(doc.minio_bucket, doc.minio_key, expires_minutes=15)
+    # Ссылка через API-прокси: presigned-URL с внутренним адресом MinIO (minio:9000)
+    # неразрешим из браузера на хосте.
+    url = f"/api/v1/documents/{doc_id}/download"
     data = RequestDocumentOut.model_validate(doc).model_dump()
     return RequestDocumentDetailOut(**data, presigned_url=url, expires_in=900)
 
@@ -263,8 +267,20 @@ async def get_document(doc_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 @router.get("/documents/{doc_id}/download")
 async def download_document(doc_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     doc = await _get_document(db, doc_id)
-    url = get_minio_service().presigned_url(doc.minio_bucket, doc.minio_key, expires_minutes=15)
-    return RedirectResponse(url=url, status_code=302)
+    # Отдаём файл через бэкенд: redirect на presigned-URL MinIO ломается в docker-сети
+    # (браузер не резолвит minio:9000), а подмена хоста в подписанном URL ломает подпись.
+    data = await asyncio.to_thread(get_minio_service().download_bytes, doc.minio_bucket, doc.minio_key)
+    filename = doc.filename.replace('"', "'")
+    quoted = urllib.parse.quote(filename)
+    disposition = f"attachment; filename=\"{quoted}\"; filename*=UTF-8''{quoted}"
+    return Response(
+        content=data,
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": disposition,
+            "Content-Length": str(len(data)),
+        },
+    )
 
 
 @router.post("/requests/{request_id}/attachments", response_model=RequestDocumentOut, status_code=201)

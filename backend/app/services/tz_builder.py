@@ -29,14 +29,20 @@ async def create_tz_from_template(
     template: TzTemplate,
     prefill: dict[str, Any] | None = None,
 ) -> RequestTz:
+    # Payload собираем заранее и присваиваем НОВЫЙ dict: SQLAlchemy не отслеживает
+    # in-place мутации JSON-поля (INSERT успевает уйти с пустым {} до заполнения).
+    blocks = _blocks_from_schema(template.blocks_schema)
     payload: dict[str, Any] = {}
-    tz = RequestTz(request_id=request_id, template_id=template.id, payload=payload)
+    for block in blocks:
+        payload[block["code"]] = (prefill or {}).get(block["code"], {})
+
+    tz = RequestTz(request_id=request_id, template_id=template.id, payload=dict(payload))
     db.add(tz)
     await db.flush()
 
-    for block in _blocks_from_schema(template.blocks_schema):
+    for block in blocks:
         code = block["code"]
-        content = (prefill or {}).get(code, {})
+        content = payload[code]
         completeness = compute_block_completeness(block, content) if content else 0
         db.add(
             RequestTzBlock(
@@ -49,7 +55,6 @@ async def create_tz_from_template(
                 completeness_pct=completeness,
             )
         )
-        payload[code] = content
 
     if prefill and "work_content" in prefill and isinstance(prefill["work_content"], dict):
         stages_data = prefill["work_content"].get("stages", [])
@@ -86,7 +91,10 @@ async def create_tz_from_template(
             )
         )
 
-    tz.payload = payload
+    if prefill and isinstance(prefill.get("work_content"), dict):
+        payload["work_content"] = prefill["work_content"]
+
+    tz.payload = dict(payload)
     overall, _ = compute_overall_completeness(template, payload)
     tz.completeness_pct = overall
     db.add(TzCompletenessLog(tz_id=tz.id, completeness_pct=overall, triggered_by="ai" if prefill else "user"))
