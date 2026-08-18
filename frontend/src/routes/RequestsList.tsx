@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { RequestRecord, RequestStatus } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/misc'
@@ -15,9 +14,8 @@ import { formatDate, formatMoney } from '@/lib/utils'
 const filters: { value: string; label: string }[] = [
   { value: '', label: 'Все' },
   { value: 'draft', label: 'Черновики' },
-  { value: 'in_progress', label: 'В работе' },
-  { value: 'ready', label: 'Готовы' },
   { value: 'submitted', label: 'Отправлены' },
+  { value: 'deleted', label: 'Удалено' },
 ]
 
 export default function RequestsList() {
@@ -28,8 +26,17 @@ export default function RequestsList() {
   const toast = useUiStore((s) => s.toast)
 
   const { data: requests = [], isLoading } = useQuery({
-    queryKey: ['requests'],
-    queryFn: () => api.listRequests(),
+    queryKey: ['requests', status],
+    queryFn: () => api.listRequests(status || undefined),
+  })
+  const { data: counts = {} } = useQuery({
+    queryKey: ['requestCounts'],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        filters.filter((f) => f.value).map(async (f) => [f.value, (await api.listRequests(f.value)).length] as const),
+      )
+      return Object.fromEntries(entries) as Record<string, number>
+    },
   })
   const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: () => api.listCompanies(), staleTime: Infinity })
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => api.listProducts(), staleTime: Infinity })
@@ -38,11 +45,12 @@ export default function RequestsList() {
     mutationFn: (id: string) => api.deleteRequest(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['requests'] })
+      queryClient.invalidateQueries({ queryKey: ['requestCounts'] })
       toast('Заявка удалена', 'success')
     },
   })
 
-  const filtered = status ? requests.filter((r) => r.status === status) : requests
+  const filtered = requests
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 xl:py-8">
@@ -70,11 +78,7 @@ export default function RequestsList() {
             }
           >
             {f.label}
-            {f.value && (
-              <span className="ml-1.5 text-xs opacity-70">
-                {requests.filter((r: RequestRecord) => r.status === (f.value as RequestStatus)).length}
-              </span>
-            )}
+            {f.value && <span className="ml-1.5 text-xs opacity-70">{counts[f.value] ?? 0}</span>}
           </button>
         ))}
       </div>

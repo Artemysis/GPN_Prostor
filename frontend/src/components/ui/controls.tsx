@@ -120,10 +120,12 @@ export function ListInput({
   values,
   onChange,
   placeholder,
+  className,
 }: {
   values: string[]
   onChange: (values: string[]) => void
   placeholder?: string
+  className?: string
 }) {
   const [draft, setDraft] = React.useState('')
   const add = () => {
@@ -147,6 +149,7 @@ export function ListInput({
       )}
       <div className="flex gap-2">
         <Input
+          className={className}
           value={draft}
           placeholder={placeholder}
           onChange={(e) => setDraft(e.target.value)}

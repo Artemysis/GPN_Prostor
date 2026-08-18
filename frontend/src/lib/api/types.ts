@@ -1,5 +1,5 @@
 export type Role = 'customer' | 'admin'
-export type RequestStatus = 'draft' | 'in_progress' | 'ready' | 'submitted' | 'archived'
+export type RequestStatus = 'draft' | 'submitted' | 'deleted'
 export type FilledBy = 'manual' | 'ai' | 'mixed'
 
 export interface User {
@@ -113,6 +113,8 @@ export interface RequestRecord {
   date_start: string | null
   date_end: string | null
   chat_session_id: string | null
+  request_metadata: { filled_by?: Record<string, FilledBy | string> } | null
+  deleted_at: string | null
   created_at: string
   updated_at: string
 }

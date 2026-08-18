@@ -20,7 +20,6 @@ def render_tz_docx(request: Request, template: TzTemplate, tz: RequestTz, stages
     meta.add_run(f"Заявка №{request.number or request.id}\n").bold = True
     meta.add_run(f"Наименование: {request.title or '-'}\n")
     meta.add_run(f"Заказчик/подрядчик: {request.company_id or '-'}\n")
-    meta.add_run(f"Стоимость: {request.cost_total or '-'} {request.currency}\n")
     meta.add_run(f"Сроки: {request.date_start or '-'} — {request.date_end or '-'}\n")
 
     blocks = sorted(template.blocks_schema.get("blocks", []), key=lambda b: b.get("order", 0))
@@ -49,6 +48,11 @@ def render_tz_docx(request: Request, template: TzTemplate, tz: RequestTz, stages
                 p = doc.add_paragraph()
                 p.add_run(f"{label}: ").bold = True
                 p.add_run(str(value) if value else "—")
+
+    doc.add_heading("Оценочная стоимость", level=1)
+    cost_p = doc.add_paragraph()
+    cost_p.add_run("Стоимость: ").bold = True
+    cost_p.add_run(f"{request.cost_total or '-'} {request.currency}")
 
     buf = io.BytesIO()
     doc.save(buf)

@@ -17,7 +17,6 @@ const schema = z
     company_id: z.string(),
     contract_id: z.string(),
     product_id: z.string(),
-    cost_total: z.string().refine((v) => !v || Number(v) > 0, 'Стоимость должна быть положительной'),
     date_start: z.string(),
     date_end: z.string(),
   })
@@ -46,7 +45,6 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
       company_id: request.company_id ?? '',
       contract_id: request.contract_id ?? '',
       product_id: request.product_id ?? '',
-      cost_total: request.cost_total != null ? String(request.cost_total) : '',
       date_start: request.date_start ?? '',
       date_end: request.date_end ?? '',
     },
@@ -87,7 +85,6 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
       company_id: request.company_id ?? '',
       contract_id: request.contract_id ?? '',
       product_id: request.product_id ?? '',
-      cost_total: request.cost_total != null ? String(request.cost_total) : '',
       date_start: request.date_start ?? '',
       date_end: request.date_end ?? '',
     })
@@ -100,7 +97,6 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
       company_id: values.company_id || null,
       contract_id: values.contract_id || null,
       product_id: values.product_id || null,
-      cost_total: values.cost_total ? Number(values.cost_total) : null,
       date_start: values.date_start || null,
       date_end: values.date_end || null,
     })
@@ -167,12 +163,7 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
         {!watchedContractId && <p className="mt-1 text-xs text-slate-400">Сначала выберите договор — список продуктов фильтруется по нему</p>}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <Label htmlFor="hf_cost">Стоимость, ₽</Label>
-          <Input id="hf_cost" type="number" min={0} {...register('cost_total')} placeholder="24 500 000" />
-          {errors.cost_total && <p className="mt-1 text-xs text-red-500">{errors.cost_total.message}</p>}
-        </div>
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <Label htmlFor="hf_start">Начало работ</Label>
           <Input id="hf_start" type="date" {...register('date_start')} />

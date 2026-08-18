@@ -1,7 +1,8 @@
 import uuid
 from datetime import date, datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class RequestCreate(BaseModel):
@@ -27,7 +28,7 @@ class RequestUpdate(BaseModel):
     currency: str | None = None
     date_start: date | None = None
     date_end: date | None = None
-    status: str | None = None
+    status: Literal["draft", "submitted"] | None = None
 
 
 class RequestOut(BaseModel):
@@ -46,8 +47,16 @@ class RequestOut(BaseModel):
     date_start: date | None = None
     date_end: date | None = None
     chat_session_id: uuid.UUID | None = None
+    request_metadata: dict[str, Any] = {}
+    deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _apply_deleted_status(self) -> "RequestOut":
+        if self.deleted_at is not None:
+            self.status = "deleted"
+        return self
 
 
 class TzSummary(BaseModel):
