@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ChatSessionCreate(BaseModel):
@@ -15,6 +15,8 @@ class ChatSessionCreateOut(BaseModel):
 
 
 class ChatMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     role: str
     content: str
