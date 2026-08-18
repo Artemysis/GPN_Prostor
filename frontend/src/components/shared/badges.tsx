@@ -3,21 +3,12 @@ import type { FilledBy, RequestStatus } from '@/lib/api'
 
 export const statusLabels: Record<RequestStatus, string> = {
   draft: 'Черновик',
-  in_progress: 'В работе',
-  ready: 'Готово',
   submitted: 'Отправлена',
-  archived: 'Архив',
+  deleted: 'Удалено',
 }
 
 export function StatusBadge({ status }: { status: RequestStatus }) {
-  const variant =
-    status === 'submitted'
-      ? 'default'
-      : status === 'ready'
-        ? 'success'
-        : status === 'in_progress'
-          ? 'warning'
-          : 'slate'
+  const variant = status === 'submitted' ? 'default' : status === 'deleted' ? 'danger' : 'slate'
   return <Badge variant={variant}>{statusLabels[status]}</Badge>
 }
 

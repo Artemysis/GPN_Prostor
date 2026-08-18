@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { RequestTz } from '@/lib/api'
+import type { RequestRecord, RequestTz } from '@/lib/api'
 import { TzBlockCard } from './TzBlockCard'
 import { TzStageEditor } from './TzStageEditor'
+import { EstimatedCostCard } from './EstimatedCostCard'
 
-export function TzBuilder({ requestId, tz }: { requestId: string; tz: RequestTz }) {
+export function TzBuilder({ requestId, tz, request }: { requestId: string; tz: RequestTz; request: RequestRecord }) {
   const { data: template } = useQuery({
     queryKey: ['template', tz.template_id],
     queryFn: () => api.getTemplate(tz.template_id),
@@ -30,6 +31,8 @@ export function TzBuilder({ requestId, tz }: { requestId: string; tz: RequestTz 
           }
           return <TzBlockCard key={block.block_code} block={block} schema={schema} requestId={requestId} />
         })}
+
+      <EstimatedCostCard requestId={requestId} request={request} />
     </div>
   )
 }

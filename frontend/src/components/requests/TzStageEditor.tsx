@@ -200,7 +200,12 @@ export function TzStageEditor({
               <div className="grid grid-cols-2 gap-3 border-t border-slate-100 px-4 py-3">
                 <div className="col-span-2">
                   <Label>Наименование этапа</Label>
-                  <Input value={s.stage_name} onChange={(e) => patchStage(s.id, { stage_name: e.target.value })} />
+                  <Input
+                    className={!s.stage_name.trim() ? 'border-red-400 focus:ring-red-400' : ''}
+                    value={s.stage_name}
+                    onChange={(e) => patchStage(s.id, { stage_name: e.target.value })}
+                  />
+                  {!s.stage_name.trim() && <p className="mt-1 text-xs text-red-500">Обязательное поле — заполните перед отправкой заявки</p>}
                 </div>
                 <div>
                   <Label>Требования к выполнению</Label>

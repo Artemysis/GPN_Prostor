@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/modal'
 import { StatusBadge } from '@/components/shared/badges'
 import { useUiStore } from '@/lib/stores/uiStore'
 import { cn, formatMoney } from '@/lib/utils'
+import { findMissingRequiredFields } from '@/lib/api/drafts'
 import { AiChat } from './AiChat'
 import { TzBuilder } from './TzBuilder'
 import { TzAnalysisPanel } from './TzAnalysisPanel'
@@ -36,8 +37,17 @@ export function RequestWorkspace({ requestId, onTzCreated }: { requestId: string
   const { data: templates = [] } = useQuery({ queryKey: ['templates'], queryFn: () => api.listTemplates() })
   const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: () => api.listCompanies(), staleTime: Infinity })
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => api.listProducts(), staleTime: Infinity })
+  const { data: tzTemplate } = useQuery({
+    queryKey: ['template', tz?.template_id],
+    queryFn: () => api.getTemplate(tz!.template_id),
+    enabled: Boolean(tz),
+    staleTime: Infinity,
+  })
 
   if (!request) return null
+
+  const missingFields =
+    tz && tzTemplate ? findMissingRequiredFields(tzTemplate.blocks_schema.blocks, tz.payload, tz.stages) : []
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['request', requestId] })
@@ -114,7 +124,11 @@ export function RequestWorkspace({ requestId, onTzCreated }: { requestId: string
             <PencilLine className="h-4 w-4" />
             Изменить шапку
           </Button>
-          <Button onClick={submit} disabled={request.status === 'submitted' || !tz}>
+          <Button
+            onClick={submit}
+            disabled={request.status === 'submitted' || !tz || missingFields.length > 0}
+            title={missingFields.length > 0 ? `Не заполнены обязательные поля:\n${missingFields.map((m) => m.label).join('\n')}` : undefined}
+          >
             <Send className="h-4 w-4" />
             {request.status === 'submitted' ? 'Отправлена' : 'Отправить заявку'}
           </Button>
@@ -181,7 +195,7 @@ export function RequestWorkspace({ requestId, onTzCreated }: { requestId: string
               </Card>
             </div>
           ) : (
-            <TzBuilder requestId={requestId} tz={tz} />
+            <TzBuilder requestId={requestId} tz={tz} request={request} />
           )}
         </div>
 

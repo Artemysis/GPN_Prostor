@@ -42,6 +42,15 @@ async def create_chat_session(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user_optional),
 ):
+    # История чата привязана к заявке: при повторном открытии заявки переиспользуем
+    # существующую сессию, чтобы не терять переписку (см. п.6 плана правок).
+    if body.request_id is not None:
+        existing = (
+            await db.execute(select(ChatSession).where(ChatSession.request_id == body.request_id))
+        ).scalars().first()
+        if existing is not None:
+            return ChatSessionCreateOut(session_id=existing.id)
+
     session = ChatSession(request_id=body.request_id, user_id=user.id, title=body.title)
     db.add(session)
     await db.commit()
