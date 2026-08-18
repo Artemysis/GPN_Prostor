@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { RequestHeaderForm } from './RequestHeaderForm'
 import { AiChat } from './AiChat'
 import { RequestWorkspace } from './RequestWorkspace'
+import { useUiStore } from '@/lib/stores/uiStore'
 import { cn } from '@/lib/utils'
 
 export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -17,6 +18,7 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
   const [chosenTemplateId, setChosenTemplateId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const createdRef = useRef(false)
+  const toast = useUiStore((s) => s.toast)
 
   useEffect(() => {
     if (open && !createdRef.current) {
@@ -78,6 +80,9 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
       .then(() => {
         setHasTz(true)
         invalidate()
+      })
+      .catch((error) => {
+        toast(error instanceof Error ? error.message : 'Не удалось создать ТЗ', 'error')
       })
       .finally(() => {
         setCreatingTz(false)

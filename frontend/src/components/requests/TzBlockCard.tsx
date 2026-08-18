@@ -140,44 +140,53 @@ export function TzBlockCard({
           </div>
         )}
 
-        {schema.fields?.map((f) => (
-          <div key={f.key}>
-            <Label htmlFor={`blk_${block.block_code}_${f.key}`}>
-              {f.label}
-              {f.required && <span className="ml-1 text-red-400">*</span>}
-            </Label>
-            {f.type === 'list' ? (
-              <ListInput
-                values={(field(f.key) as string[]) ?? []}
-                onChange={(values) => setField(f.key, values)}
-                placeholder="Добавьте пункт и нажмите Enter"
-              />
-            ) : f.type === 'textarea' ? (
-              <AutoTextarea
-                id={`blk_${block.block_code}_${f.key}`}
-                minRows={2}
-                placeholder={f.placeholder}
-                value={(field(f.key) as string) ?? ''}
-                onChange={(e) => setField(f.key, e.target.value)}
-              />
-            ) : f.type === 'date' ? (
-              <Input
-                id={`blk_${block.block_code}_${f.key}`}
-                type="date"
-                value={(field(f.key) as string) ?? ''}
-                onChange={(e) => setField(f.key, e.target.value)}
-              />
-            ) : (
-              <AutoTextarea
-                id={`blk_${block.block_code}_${f.key}`}
-                minRows={1}
-                placeholder={f.placeholder}
-                value={(field(f.key) as string) ?? ''}
-                onChange={(e) => setField(f.key, e.target.value)}
-              />
-            )}
-          </div>
-        ))}
+        {schema.fields?.map((f) => {
+          const missing = Boolean(f.required) && !isFilled(field(f.key))
+          const errorClass = missing ? 'border-red-400 focus:ring-red-400' : ''
+          return (
+            <div key={f.key}>
+              <Label htmlFor={`blk_${block.block_code}_${f.key}`}>
+                {f.label}
+                {f.required && <span className="ml-1 text-red-400">*</span>}
+              </Label>
+              {f.type === 'list' ? (
+                <ListInput
+                  values={(field(f.key) as string[]) ?? []}
+                  onChange={(values) => setField(f.key, values)}
+                  placeholder="Добавьте пункт и нажмите Enter"
+                  className={errorClass}
+                />
+              ) : f.type === 'textarea' ? (
+                <AutoTextarea
+                  id={`blk_${block.block_code}_${f.key}`}
+                  minRows={2}
+                  className={errorClass}
+                  placeholder={f.placeholder}
+                  value={(field(f.key) as string) ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                />
+              ) : f.type === 'date' ? (
+                <Input
+                  id={`blk_${block.block_code}_${f.key}`}
+                  type="date"
+                  className={errorClass}
+                  value={(field(f.key) as string) ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                />
+              ) : (
+                <AutoTextarea
+                  id={`blk_${block.block_code}_${f.key}`}
+                  minRows={1}
+                  className={errorClass}
+                  placeholder={f.placeholder}
+                  value={(field(f.key) as string) ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                />
+              )}
+              {missing && <p className="mt-1 text-xs text-red-500">Обязательное поле — заполните перед отправкой заявки</p>}
+            </div>
+          )
+        })}
       </div>
 
       {dirty && (

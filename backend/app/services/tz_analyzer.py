@@ -8,6 +8,7 @@ from app.db.models import Request, RequestTz, RequestTzStage, TzTemplate
 from app.services.llm_client import DeepSeekLLMClient, get_llm_client
 
 TYPICAL_DURATION_DAYS = 365  # типовой срок — 12 мес.
+RISK_PENALTY = {"high": 10, "medium": 5, "low": 2}  # штраф к % готовности за каждый найденный риск
 
 GEOMODEL_KEYWORDS = ["3d-геомодел", "3d геомодел", "геологическ", "подсчет запасов", "подсчёт запасов"]
 BASE_DATA_STAGE_KEYWORDS = ["формирование базы данных", "подготовка исходных данных", "база данных"]
@@ -46,6 +47,31 @@ def compute_completeness(template: TzTemplate, payload: dict[str, Any]) -> dict[
         content = payload.get(code, {})
         result[code] = compute_block_completeness(block, content)
     return result
+
+
+def find_missing_required_fields(
+    template: TzTemplate, payload: dict[str, Any], stages: list[RequestTzStage]
+) -> list[dict[str, str]]:
+    """Список обязательных полей ТЗ, которые ещё не заполнены (для мягкой валидации перед отправкой)."""
+    missing: list[dict[str, str]] = []
+    for block in _blocks_schema(template):
+        code = block["code"]
+        if block.get("is_stages_block"):
+            if not stages:
+                block_name = block.get("name", code)
+                missing.append({"block_code": code, "field": "stages", "label": f"{block_name}: этапы работ"})
+            continue
+        content = payload.get(code, {}) or {}
+        for field in block.get("fields", []):
+            if field.get("required") and not _field_filled(content.get(field["key"])):
+                missing.append(
+                    {
+                        "block_code": code,
+                        "field": field["key"],
+                        "label": f"{block.get('name', code)}: {field.get('label', field['key'])}",
+                    }
+                )
+    return missing
 
 
 def compute_overall_completeness(template: TzTemplate, payload: dict[str, Any]) -> tuple[int, dict[str, int]]:
@@ -177,6 +203,39 @@ def _apply_business_rules(
             }
         )
 
+    if not stages:
+        risks.append(
+            {
+                "severity": "high",
+                "category": "missing_data",
+                "title": "Не заполнено содержание работ",
+                "description": "В блоке «Содержание работ» не указано ни одного этапа",
+                "suggestion": "Добавьте хотя бы один этап с требованиями и ожидаемыми результатами",
+                "block_code": "work_content",
+            }
+        )
+        recommendations.append(
+            {
+                "title": "Описать этапы работ",
+                "description": "Заполните этапы в блоке «Содержание работ» вручную или через «Заполнить ИИ»",
+                "priority": 1,
+                "block_code": "work_content",
+            }
+        )
+
+    documentation = payload.get("documentation", {}) or {}
+    if not _field_filled(documentation.get("report_formats")):
+        risks.append(
+            {
+                "severity": "low",
+                "category": "missing_data",
+                "title": "Не указаны требования к документации",
+                "description": "Поле documentation.report_formats пусто",
+                "suggestion": "Укажите форматы отчётных документов",
+                "block_code": "documentation",
+            }
+        )
+
     return risks, recommendations
 
 
@@ -234,15 +293,34 @@ async def analyze_tz(
         system_prompt = (
             "Проанализируй ТЗ нефтесервисной заявки и дополни список рисков и рекомендаций сверх "
             "уже найденных детерминированными правилами. Не дублируй уже найденные пункты. "
-            "Верни JSON по заданной схеме."
+            "Если основания есть, дай не менее 3-5 дополнительных содержательных пунктов (риски и/или "
+            "рекомендации) — учитывай логическую согласованность этапов работ, сроков и содержания блоков "
+            "между собой, а не только пустые поля. Верни JSON по заданной схеме."
+        )
+        stages_text = "; ".join(
+            f"Этап {s.stage_order} «{s.stage_name}»: описание={s.description or '-'}, "
+            f"требования={s.requirements or '-'}, результаты={s.expected_results or '-'}, "
+            f"сроки={s.stage_start_date or '-'}..{s.stage_end_date or '-'}"
+            for s in sorted(stages, key=lambda s: s.stage_order)
+        ) or "этапы не заполнены"
+        request_text = (
+            f"Название заявки: {request.title or '-'}. Описание: {request.description or '-'}. "
+            f"Сроки заявки: {request.date_start or '-'} — {request.date_end or '-'}."
+            if request
+            else "данные заявки недоступны"
         )
         user_prompt = (
             f"Шаблон: {template.name}. Payload: {tz.payload}. "
+            f"Содержание работ (этапы): {stages_text}. "
+            f"Контекст заявки: {request_text}. "
             f"Уже найденные риски: {risks}. % готовности по блокам: {block_completeness}."
         )
         extra = await llm.chat_json(system_prompt, user_prompt, json_schema, model=settings.llm_model)
         risks.extend(extra.get("risks", []))
         recommendations.extend(extra.get("recommendations", []))
+
+    penalty = sum(RISK_PENALTY.get(r.get("severity"), 0) for r in risks)
+    overall = max(0, overall - penalty)
 
     return {
         "completeness_pct": overall,

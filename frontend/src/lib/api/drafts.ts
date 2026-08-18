@@ -59,8 +59,30 @@ export function draftStages(skeleton: TzTemplateStageSkeleton[], filledBy: Fille
 export function isFilled(value: unknown): boolean {
   if (value == null) return false
   if (typeof value === 'string') return value.trim().length > 0
-  if (Array.isArray(value)) return value.length > 0
+  if (Array.isArray(value)) return value.some((v) => (typeof v === 'string' ? v.trim().length > 0 : v != null))
   return true
+}
+
+/** Список обязательных, но незаполненных полей блока ТЗ (для мягкой валидации перед отправкой заявки). */
+export function findMissingRequiredFields(
+  blocksSchema: { code: string; name: string; is_stages_block?: boolean; fields?: TzBlockField[] }[],
+  payload: Record<string, unknown>,
+  stages: TzStage[],
+): { block_code: string; label: string }[] {
+  const missing: { block_code: string; label: string }[] = []
+  for (const block of blocksSchema) {
+    if (block.is_stages_block) {
+      if (stages.length === 0) missing.push({ block_code: block.code, label: `${block.name}: этапы работ` })
+      continue
+    }
+    const content = (payload[block.code] as Record<string, unknown>) ?? {}
+    for (const f of block.fields ?? []) {
+      if (f.required && !isFilled(content[f.key])) {
+        missing.push({ block_code: block.code, label: `${block.name}: ${f.label}` })
+      }
+    }
+  }
+  return missing
 }
 
 export function computeBlockPct(

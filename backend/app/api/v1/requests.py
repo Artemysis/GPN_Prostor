@@ -1,8 +1,10 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.deps import get_current_user_optional, get_db
 from app.db.models import Request, RequestDocument, RequestTz, RequestTzAnalysis, TzTemplate, User
@@ -14,8 +16,9 @@ from app.schemas.request import (
     RequestUpdate,
     TzSummary,
 )
+from app.services.tz_analyzer import find_missing_required_fields
 from app.services.tz_builder import create_tz_from_template
-from app.utils.errors import NotFoundError
+from app.utils.errors import NotFoundError, ValidationError
 from app.utils.numbering import generate_request_number
 
 router = APIRouter()
@@ -63,9 +66,15 @@ async def list_requests(
 ):
     stmt = select(Request)
     count_stmt = select(func.count()).select_from(Request)
-    if status:
-        stmt = stmt.where(Request.status == status)
-        count_stmt = count_stmt.where(Request.status == status)
+    if status == "deleted":
+        stmt = stmt.where(Request.deleted_at.is_not(None))
+        count_stmt = count_stmt.where(Request.deleted_at.is_not(None))
+    elif status:
+        stmt = stmt.where(Request.status == status, Request.deleted_at.is_(None))
+        count_stmt = count_stmt.where(Request.status == status, Request.deleted_at.is_(None))
+    else:
+        stmt = stmt.where(Request.deleted_at.is_(None))
+        count_stmt = count_stmt.where(Request.deleted_at.is_(None))
     if user:
         stmt = stmt.where(Request.user_id == user)
         count_stmt = count_stmt.where(Request.user_id == user)
@@ -123,7 +132,7 @@ async def delete_request(request_id: uuid.UUID, db: AsyncSession = Depends(get_d
     request = await db.get(Request, request_id)
     if request is None:
         raise NotFoundError("Заявка не найдена")
-    await db.delete(request)
+    request.deleted_at = datetime.now(UTC)
     await db.commit()
 
 
@@ -132,6 +141,24 @@ async def submit_request(request_id: uuid.UUID, db: AsyncSession = Depends(get_d
     request = await db.get(Request, request_id)
     if request is None:
         raise NotFoundError("Заявка не найдена")
+
+    tz = (
+        await db.execute(
+            select(RequestTz)
+            .options(selectinload(RequestTz.stages))
+            .where(RequestTz.request_id == request_id)
+        )
+    ).scalar_one_or_none()
+    if tz is None:
+        raise ValidationError("Перед отправкой заявки необходимо создать ТЗ")
+    template = await db.get(TzTemplate, tz.template_id)
+    missing = find_missing_required_fields(template, tz.payload, tz.stages)
+    if missing:
+        raise ValidationError(
+            "Заполните обязательные поля ТЗ перед отправкой заявки",
+            details={"missing_fields": missing},
+        )
+
     request.status = "submitted"
     await db.commit()
     await db.refresh(request)
