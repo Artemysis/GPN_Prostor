@@ -55,6 +55,7 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
   const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: () => api.listCompanies(), staleTime: Infinity })
   const watchedCompanyId = watch('company_id')
   const watchedContractId = watch('contract_id')
+  const watchedProductId = watch('product_id')
   const { data: contracts = [] } = useQuery({
     queryKey: ['contracts', watchedCompanyId || null],
     queryFn: () => api.listContracts(watchedCompanyId || undefined),
@@ -63,6 +64,21 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
     queryKey: ['products', watchedContractId || null],
     queryFn: () => api.listProducts(watchedContractId || undefined),
   })
+  // Независимые каталоги — чтобы уже выбранные значения не пропадали из списков,
+  // если фильтр по договору/подрядчику их не содержит (возврат к шагу 1, применение ИИ).
+  const { data: allContracts = [] } = useQuery({ queryKey: ['contracts', 'all'], queryFn: () => api.listContracts(), staleTime: Infinity })
+  const { data: allProducts = [] } = useQuery({ queryKey: ['products', 'all'], queryFn: () => api.listProducts(), staleTime: Infinity })
+
+  const contractOptions = [...contracts]
+  if (watchedContractId && !contractOptions.some((k) => k.contract_id === watchedContractId)) {
+    const full = allContracts.find((k) => k.contract_id === watchedContractId)
+    if (full) contractOptions.unshift(full)
+  }
+  const productOptions = [...products]
+  if (watchedProductId && !productOptions.some((p) => p.product_id === watchedProductId)) {
+    const full = allProducts.find((p) => p.product_id === watchedProductId)
+    if (full) productOptions.unshift(full)
+  }
 
   useEffect(() => {
     reset({
@@ -107,7 +123,7 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="hf_company">Подрядчик</Label>
+          <Label htmlFor="hf_company">Исполнитель</Label>
           <Select
             id="hf_company"
             {...register('company_id')}
@@ -129,7 +145,7 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
           <Label htmlFor="hf_contract">Договор</Label>
           <Select id="hf_contract" {...register('contract_id')} disabled={!watchedCompanyId}>
             <option value="">Не выбран</option>
-            {contracts.map((k) => (
+            {contractOptions.map((k) => (
               <option key={k.contract_id} value={k.contract_id}>
                 {k.contract_number}
               </option>
@@ -142,7 +158,7 @@ export function RequestHeaderForm({ request, onSaved }: { request: RequestRecord
         <Label htmlFor="hf_product">Продукт (услуга)</Label>
         <Select id="hf_product" {...register('product_id')} disabled={!watchedContractId}>
           <option value="">Не выбран</option>
-          {products.map((p) => (
+          {productOptions.map((p) => (
             <option key={p.product_id} value={p.product_id}>
               {p.product_name}
             </option>

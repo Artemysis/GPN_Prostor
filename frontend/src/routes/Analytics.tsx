@@ -88,7 +88,7 @@ export default function Analytics() {
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Топ подрядчиков</CardTitle>
+            <CardTitle>Топ исполнителей</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {search.top_contractors.map((c) => (

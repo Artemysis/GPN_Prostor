@@ -189,6 +189,46 @@ async def seed_package_templates() -> None:
             logger.warning(f"MinIO недоступен при сидировании шаблона {filename}: {exc}")
 
 
+async def seed_embeddings(db: AsyncSession) -> None:
+    """Строит эмбеддинги для семантического поиска (§4.3 SPEC).
+
+    Без этого чат-агент не может предлагать продукты/исполнителей/шаблоны.
+    Идемпотентно: пропускается, если эмбеддинги данного типа уже есть.
+    """
+    from sqlalchemy import func as sa_func
+
+    from app.db.models import Embedding, Product
+    from app.services.embeddings import upsert_embedding
+
+    async def _count(entity_type: str) -> int:
+        return (
+            await db.execute(
+                select(sa_func.count()).select_from(Embedding).where(Embedding.entity_type == entity_type)
+            )
+        ).scalar_one()
+
+    try:
+        if await _count("product") == 0:
+            products = (await db.execute(select(Product))).scalars().all()
+            for p in products:
+                await upsert_embedding(db, "product", p.product_id, p.product_name)
+            logger.info(f"Построены эмбеддинги продуктов: {len(products)}")
+
+        if await _count("company_services") == 0:
+            companies = (await db.execute(select(Company))).scalars().all()
+            for c in companies:
+                await upsert_embedding(db, "company_services", c.company_id, c.services or c.name)
+            logger.info(f"Построены эмбеддинги исполнителей: {len(companies)}")
+
+        if await _count("tz_template") == 0:
+            templates = (await db.execute(select(TzTemplate))).scalars().all()
+            for t in templates:
+                await upsert_embedding(db, "tz_template", str(t.id), f"{t.name} {t.description or ''}")
+            logger.info(f"Построены эмбеддинги шаблонов ТЗ: {len(templates)}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Построение эмбеддингов при сидировании завершилось ошибкой: {exc}")
+
+
 async def run_seed(db: AsyncSession) -> None:
     try:
         get_minio_service().ensure_buckets()
@@ -197,3 +237,4 @@ async def run_seed(db: AsyncSession) -> None:
     await seed_xlsx(db)
     await seed_tz_templates(db)
     await seed_package_templates()
+    await seed_embeddings(db)
