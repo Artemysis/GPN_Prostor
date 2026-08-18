@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [requestId, setRequestId] = useState<string | null>(null)
   const [hasTz, setHasTz] = useState(false)
+  const [creatingTz, setCreatingTz] = useState(false)
   const queryClient = useQueryClient()
   const createdRef = useRef(false)
 
@@ -36,9 +37,27 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
     enabled: Boolean(requestId),
   })
 
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => api.listTemplates(),
+    enabled: Boolean(requestId) && !hasTz,
+  })
+
   const invalidate = () => {
     if (requestId) queryClient.invalidateQueries({ queryKey: ['request', requestId] })
     queryClient.invalidateQueries({ queryKey: ['requests'] })
+  }
+
+  const createTz = (templateId: string) => {
+    if (!requestId || creatingTz) return
+    setCreatingTz(true)
+    void api
+      .createTz(requestId, templateId, true)
+      .then(() => {
+        setHasTz(true)
+        invalidate()
+      })
+      .finally(() => setCreatingTz(false))
   }
 
   return (
@@ -74,17 +93,35 @@ export function CreateRequestModal({ open, onClose }: { open: boolean; onClose: 
                 <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
                   <RequestHeaderForm request={request} onSaved={invalidate} />
                 </div>
-                <AiChat
-                  className="max-h-[560px]"
-                  requestId={requestId}
-                  onApplied={invalidate}
-                  onCreateTz={(templateId) => {
-                    void api.createTz(requestId, templateId, true).then(() => {
-                      setHasTz(true)
-                      invalidate()
-                    })
-                  }}
-                />
+                <div className="flex min-h-0 flex-col gap-3">
+                  <AiChat
+                    className="min-h-0 flex-1"
+                    requestId={requestId}
+                    onApplied={invalidate}
+                    onCreateTz={createTz}
+                  />
+                  <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-card">
+                    <p className="text-xs font-semibold text-slate-800">Выберите тип ТЗ</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Вручную — карточками ниже, или примените рекомендацию ИИ из чата
+                    </p>
+                    <div className="mt-2.5 max-h-56 space-y-1.5 overflow-y-auto pr-0.5">
+                      {templates.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => createTz(t.id)}
+                          disabled={creatingTz}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs transition-colors hover:border-brand-400 hover:bg-brand-50/40 disabled:opacity-50"
+                        >
+                          <span className="font-semibold text-slate-800">{t.name}</span>
+                        </button>
+                      ))}
+                      {templates.length === 0 && (
+                        <p className="px-1 py-2 text-[11px] text-slate-400">Список шаблонов загружается…</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="mt-4 flex items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-xs text-brand-900/80">
                 <MessageSquare className="h-4 w-4 shrink-0" />

@@ -16,7 +16,6 @@ settings = get_settings()
 XLSX_FILE_MAP = [
     ("0. Компании.xlsx", xlsx_parser.ingest_companies),
     ("1. Договоры.xlsx", xlsx_parser.ingest_contracts),
-    ("5. Продукты + Операции.xlsx", xlsx_parser.ingest_operations),
 ]
 
 
@@ -45,6 +44,11 @@ async def seed_xlsx(db: AsyncSession) -> None:
             db, products_path.read_bytes(), rates_path.read_bytes() if rates_path.exists() else None
         )
         logger.info(f"Загружены продукты/расценки: {result}")
+
+    operations_path = xlsx_dir / "5. Продукты + Операции.xlsx"
+    if operations_path.exists():
+        result = await xlsx_parser.ingest_operations(db, operations_path.read_bytes())
+        logger.info(f"Загружены операции: {result}")
 
     calc_path = xlsx_dir / "2. Договор + РС.xlsx"
     if calc_path.exists():

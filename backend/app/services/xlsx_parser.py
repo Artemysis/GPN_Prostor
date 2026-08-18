@@ -242,6 +242,7 @@ async def ingest_calculations(db: AsyncSession, file_bytes: bytes) -> dict:
     stage_docs_col = _col(df, "stage_documentation_list", "документация")
 
     inserted, updated = 0, 0
+    pending_parents: dict[str, str] = {}
     for _, row in df.iterrows():
         calc_id = _val(row, calc_id_col)
         contract_id = _val(row, contract_id_col)
@@ -269,11 +270,12 @@ async def ingest_calculations(db: AsyncSession, file_bytes: bytes) -> dict:
         stage_id = _val(row, stage_id_col)
         if stage_id and not await db.get(CalculationStage, stage_id):
             order_raw = _val(row, stage_order_col)
+            parent_stage_id = _val(row, parent_col) if parent_col else None
             db.add(
                 CalculationStage(
                     stage_id=stage_id,
                     calc_id=calc_id,
-                    parent_stage_id=_val(row, parent_col),
+                    parent_stage_id=None,
                     stage_name=_val(row, stage_name_col) or "Этап",
                     stage_start_date=_to_date(row[stage_start_col]) if stage_start_col else None,
                     stage_end_date=_to_date(row[stage_end_col]) if stage_end_col else None,
@@ -281,5 +283,13 @@ async def ingest_calculations(db: AsyncSession, file_bytes: bytes) -> dict:
                     stage_documentation_list=_val(row, stage_docs_col),
                 )
             )
+            if parent_stage_id:
+                pending_parents[stage_id] = parent_stage_id
+    await db.flush()
+
+    for stage_id, parent_stage_id in pending_parents.items():
+        stage = await db.get(CalculationStage, stage_id)
+        if stage and await db.get(CalculationStage, parent_stage_id):
+            stage.parent_stage_id = parent_stage_id
     await db.commit()
     return {"inserted": inserted, "updated": updated}
