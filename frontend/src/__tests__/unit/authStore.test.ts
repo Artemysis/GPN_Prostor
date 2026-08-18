@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../msw/server'
 import { useAuthStore } from '@/lib/stores/authStore'
 
-const user = { id: 'u-1', username: 'ivanov', role: 'customer' as const }
+const user = { id: 'u-1', username: 'ivanov', full_name: 'ivanov', role: 'customer' as const }
 
 describe('useAuthStore (Zustand)', () => {
   beforeEach(() => {
@@ -28,7 +28,7 @@ describe('useAuthStore (Zustand)', () => {
     expect(state.token).toBe('jwt-abc')
     expect(state.user?.id).toBe('u-1')
     expect(window.localStorage.getItem('prostor.token')).toBe('jwt-abc')
-    expect(JSON.parse(window.localStorage.getItem('prostor.user') ?? '{}')).toEqual({ ...user, full_name: 'ivanov' })
+    expect(JSON.parse(window.localStorage.getItem('prostor.user') ?? '{}')).toEqual(user)
   })
 
   it('logout: чистит store и localStorage', () => {
