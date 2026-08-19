@@ -68,6 +68,19 @@ docker exec <контейнер_postgres> psql -U prostor -d prostor_test -c "CR
 
 Чтобы указать свою тестовую БД (например, в CI), задайте `TEST_DATABASE_URL`.
 
+### LLM-эвалы (DeepEval)
+
+Отдельно от unit/api/integration есть `tests/evals` — оценка **качества** ответов
+LLM-компонентов (чат-агент, рекомендация ТЗ, анализ рисков, `fill-ai`) через
+[DeepEval](https://github.com/confident-ai/deepeval), с DeepSeek в роли LLM-судьи
+(`app/services/deepeval_model.py`). В обычный прогон `uv run pytest` не входит
+(маркер `eval` исключён в `pytest.ini`) и требует реальный ключ DeepSeek — см.
+[`tests/evals/README.md`](tests/evals/README.md):
+
+```bash
+uv run pytest tests/evals -m eval -v
+```
+
 ## Сидирование данных
 
 При старте (`SEED_ON_START=true`) приложение:
